@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	pgxconn "github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/Warewave-Technology/athens/internal/audit"
 	"github.com/Warewave-Technology/athens/internal/authz"
 	"github.com/Warewave-Technology/athens/internal/catalog"
 	"github.com/Warewave-Technology/athens/internal/discovery"
@@ -239,6 +240,7 @@ func (s *Server) structure(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return s.mapDBError(err, "")
 	}
+	s.auditRead(r, audit.EventStructureView, t, db, -1, -1, nil)
 	httpx.WriteJSON(w, http.StatusOK, st)
 	return nil
 }
@@ -258,13 +260,5 @@ func (s *Server) completion(w http.ResponseWriter, r *http.Request) error {
 		return s.mapDBError(err, "")
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"tables": cols})
-	return nil
-}
-
-func (s *Server) adminPools(w http.ResponseWriter, r *http.Request) error {
-	if err := s.requireAdmin(r); err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"pools": s.Pools.Stats()})
 	return nil
 }

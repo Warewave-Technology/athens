@@ -24,6 +24,20 @@ const (
 	EventAccessDenied    = "access_denied"
 	EventConfirmRequired = "confirm_required"
 
+	// Reads (audit.logReads) and views of the admin pages.
+	EventRowsRead      = "rows_read"
+	EventCellRead      = "cell_read"
+	EventStructureView = "structure_view"
+	EventAdminView     = "admin_view"
+	EventAuditExport   = "audit_export"
+
+	// Changes to the user's own stored items. Drafts and UI state are
+	// autosaved on every edit and are not audited.
+	EventSavedQueryCreate = "saved_query_create"
+	EventSavedQueryUpdate = "saved_query_update"
+	EventSavedQueryDelete = "saved_query_delete"
+	EventHistoryDelete    = "history_delete"
+
 	ResultOK        = "ok"
 	ResultError     = "error"
 	ResultDenied    = "denied"

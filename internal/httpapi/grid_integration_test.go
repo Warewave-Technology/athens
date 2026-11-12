@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,17 @@ func TestGridPagingSortFilter(t *testing.T) {
 		}
 		if _, r = gridQuery(t, c, "shop/paid_orders", map[string]any{"limit": 3}); r.status != 200 {
 			t.Fatalf("view: %d", r.status)
+		}
+
+		// every page read is audited; filter values only with audit.logValues
+		reads := h.audits("rows_read")
+		if len(reads) != 7 || reads[0].Object != "shop.paid_orders" || reads[0].RowsAffected == nil || *reads[0].RowsAffected != 3 {
+			t.Fatalf("rows_read: %d %+v", len(reads), reads[0])
+		}
+		for _, a := range reads {
+			if strings.Contains(a.Details, "C1_@") || strings.Contains(a.Details, "paid") {
+				t.Fatalf("filter value in audit: %s", a.Details)
+			}
 		}
 	})
 }

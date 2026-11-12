@@ -144,8 +144,10 @@ type Limits struct {
 }
 
 type Audit struct {
-	LogSQL        bool `yaml:"logSQL"`
-	LogValues     bool `yaml:"logValues"`
+	LogSQL    bool `yaml:"logSQL"`
+	LogValues bool `yaml:"logValues"`
+	// LogReads records grid page reads, cell reads and structure views.
+	LogReads      bool `yaml:"logReads"`
 	RetentionDays int  `yaml:"retentionDays"`
 }
 
@@ -195,7 +197,7 @@ func Default() Config {
 			ConcurrentQueriesPerUser: 3,
 			HistoryPerUser:           500,
 		},
-		Audit: Audit{LogSQL: true, RetentionDays: 90},
+		Audit: Audit{LogSQL: true, LogReads: true, RetentionDays: 90},
 		Store: Store{Path: "/data/athens.db"},
 		Log:   Log{Level: "info"},
 	}

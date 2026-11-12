@@ -11,10 +11,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	pgxconn "github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/Warewave-Technology/athens/internal/audit"
 	"github.com/Warewave-Technology/athens/internal/catalog"
+	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
 	"github.com/Warewave-Technology/athens/internal/rows"
+	"github.com/Warewave-Technology/athens/internal/store"
 )
 
 const (
@@ -129,8 +132,50 @@ func (s *Server) rowsQuery(w http.ResponseWriter, r *http.Request) error {
 		resp.TruncatedCells = [][2]int{}
 	}
 	resp.DurationMs = time.Since(start).Milliseconds()
+	s.auditRead(r, audit.EventRowsRead, t, db, int64(len(resp.Rows)), resp.DurationMs, s.readDetails(q))
 	httpx.WriteJSON(w, http.StatusOK, resp)
 	return nil
+}
+
+// auditRead records a successful read when audit.logReads is on. Negative n
+// or durationMs mean not measured.
+func (s *Server) auditRead(r *http.Request, event string, t discovery.Target, db string, n, durationMs int64, details map[string]any) {
+	if !s.Config.Audit.LogReads {
+		return
+	}
+	rec := store.AuditRecord{Event: event, TargetID: t.ID, Database: db, Object: r.PathValue("schema") + "." + r.PathValue("rel"),
+		Result: audit.ResultOK}
+	if n >= 0 {
+		rec.RowsAffected = &n
+	}
+	if durationMs >= 0 {
+		rec.DurationMs = &durationMs
+	}
+	if details != nil {
+		b, _ := json.Marshal(details)
+		rec.Details = string(b)
+	}
+	s.Audit.Write(r.Context(), rec)
+}
+
+// readDetails describes a grid page: paging, sort and filters. Filter values
+// are only kept with audit.logValues.
+func (s *Server) readDetails(q rows.Query) map[string]any {
+	d := map[string]any{"offset": q.Offset, "limit": q.Limit}
+	if len(q.Sort) > 0 {
+		d["sort"] = q.Sort
+	}
+	if len(q.Filters) > 0 {
+		fs := q.Filters
+		if !s.Config.Audit.LogValues {
+			fs = make([]rows.Filter, len(q.Filters))
+			for i, f := range q.Filters {
+				fs[i] = rows.Filter{Column: f.Column, Op: f.Op}
+			}
+		}
+		d["filters"] = fs
+	}
+	return d
 }
 
 // exactCount runs count(*) under a 5s statement_timeout inside a savepoint so
@@ -261,6 +306,7 @@ func (s *Server) rowsCell(w http.ResponseWriter, r *http.Request) error {
 		}
 		return s.mapDBError(err, "")
 	}
+	s.auditRead(r, audit.EventCellRead, t, db, 1, -1, map[string]any{"column": r.URL.Query().Get("column"), "pk": pk})
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"value": value, "truncated": truncated})
 	return nil
 }

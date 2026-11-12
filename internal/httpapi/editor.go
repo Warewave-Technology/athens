@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -51,8 +52,8 @@ func (s *Server) cancelQuery(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.ErrNotFound
 	}
-	details := `{"queryId":"` + id + `","owner":"` + owner + `"}`
-	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventQueryCancel, Result: audit.ResultOK, Details: details})
+	details, _ := json.Marshal(map[string]string{"queryId": id, "owner": owner})
+	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventQueryCancel, Result: audit.ResultOK, Details: string(details)})
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -79,6 +80,7 @@ func (s *Server) deleteHistory(w http.ResponseWriter, r *http.Request) error {
 	if err := s.Store.DeleteHistory(r.Context(), reqctx.UserFrom(r.Context()).ID, id); err != nil {
 		return mapStoreErr(err)
 	}
+	s.auditUserItem(r, audit.EventHistoryDelete, id, nil)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
@@ -123,6 +125,7 @@ func (s *Server) createSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return mapStoreErr(err)
 	}
+	s.auditUserItem(r, audit.EventSavedQueryCreate, q.ID, q)
 	httpx.WriteJSON(w, http.StatusCreated, q)
 	return nil
 }
@@ -145,6 +148,7 @@ func (s *Server) updateSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return mapStoreErr(err)
 	}
+	s.auditUserItem(r, audit.EventSavedQueryUpdate, q.ID, q)
 	httpx.WriteJSON(w, http.StatusOK, q)
 	return nil
 }
@@ -157,8 +161,29 @@ func (s *Server) deleteSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err := s.Store.DeleteSavedQuery(r.Context(), reqctx.UserFrom(r.Context()).ID, id); err != nil {
 		return mapStoreErr(err)
 	}
+	s.auditUserItem(r, audit.EventSavedQueryDelete, id, nil)
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// auditUserItem records a change to the user's saved queries or history.
+// The saved SQL goes into the sql field (subject to audit.logSQL).
+func (s *Server) auditUserItem(r *http.Request, event string, id int64, q *store.SavedQuery) {
+	rec := store.AuditRecord{Event: event, Result: audit.ResultOK}
+	details := map[string]any{"id": id}
+	if q != nil {
+		details["name"] = q.Name
+		rec.SQL = q.SQL
+		if q.TargetID != nil {
+			rec.TargetID = *q.TargetID
+		}
+		if q.Database != nil {
+			rec.Database = *q.Database
+		}
+	}
+	b, _ := json.Marshal(details)
+	rec.Details = string(b)
+	s.Audit.Write(r.Context(), rec)
 }
 
 func draftTarget(r *http.Request) string { return r.PathValue("ns") + "/" + r.PathValue("name") }

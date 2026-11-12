@@ -79,6 +79,7 @@ limits:
 audit:
   logSQL: true
   logValues: false
+  logReads: true                           # grid page/cell reads and structure views
   retentionDays: 90
 
 store:
