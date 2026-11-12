@@ -71,6 +71,19 @@ sources over the cached objects of the namespace, merge with priority (§3),
 diff against registry, emit events. This is simpler and correct; namespaces
 are small.
 
+## 2a. Opt-in (annotation-only) mode — the default
+
+With `discovery.requireAnnotation: true` (default, ADR-020) an object becomes a
+target only if it carries `<prefix>/enabled: "true"`:
+- StatefulSet / Deployment: annotation source; credentials from the `secret`
+  annotation, else from the container env exactly as §4.4 describes.
+- Service: annotation source (needs the `secret` annotation, §4.1).
+- CNPG `Cluster` / Zalando `postgresql`: the cnpg / zalando sources (§4.2,
+  §4.3) run for annotated clusters only.
+Unannotated workloads and clusters are ignored silently. With
+`requireAnnotation: false` every source in §4 also runs for unannotated
+objects (the original behaviour).
+
 ## 3. Source priority and dedup
 
 Order: `annotation` > `cnpg` > `zalando` > `generic`.

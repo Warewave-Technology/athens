@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,13 +15,61 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
+// testOptions uses automatic discovery so the golden files cover every
+// source; annotation-only mode (the default) has its own test.
 func testOptions(t *testing.T) Options {
 	t.Helper()
 	opt, err := OptionsFromConfig(config.Default().Discovery)
 	if err != nil {
 		t.Fatal(err)
 	}
+	opt.RequireAnnotation = false
 	return opt
+}
+
+func load(t *testing.T, f string) Objects {
+	t.Helper()
+	set, err := k8sfixture.Load(f, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Objects{Namespace: "demo", StatefulSets: set.StatefulSets, Deployments: set.Deployments,
+		Services: set.Services, CNPG: set.CNPG, Zalando: set.Zalando}
+}
+
+// TestAnnotationOnly runs every fixture with the default configuration:
+// only objects annotated enabled=true may become targets.
+func TestAnnotationOnly(t *testing.T) {
+	opt, err := OptionsFromConfig(config.Default().Discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opt.RequireAnnotation {
+		t.Fatal("annotation-only must be the default")
+	}
+	files, _ := filepath.Glob("testdata/*.yaml")
+	var got []string
+	for _, f := range files {
+		targets, _ := Build(load(t, f), opt)
+		for _, tg := range targets {
+			got = append(got, tg.ID+"="+string(tg.Source))
+		}
+	}
+	want := []string{
+		"demo/analytics=annotation", // annotated Service
+		"demo/legacy=annotation",    // annotated StatefulSet
+		"demo/billing=cnpg",         // annotated CNPG Cluster
+		"demo/acid-ledger=zalando",  // annotated Zalando postgresql
+	}
+	if strings.Join(sorted(got), ",") != strings.Join(sorted(want), ",") {
+		t.Fatalf("annotation-only targets = %v, want %v", got, want)
+	}
+}
+
+func sorted(s []string) []string {
+	out := append([]string(nil), s...)
+	sort.Strings(out)
+	return out
 }
 
 type golden struct {

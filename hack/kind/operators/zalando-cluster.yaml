@@ -3,6 +3,8 @@ kind: postgresql
 metadata:
   name: acid-e2e
   namespace: athens-demo
+  annotations:
+    athens.warewave.io/enabled: "true"
 spec:
   teamId: acid
   numberOfInstances: 1

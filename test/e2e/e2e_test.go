@@ -139,14 +139,17 @@ func TestEndToEnd(t *testing.T) {
 	writer := login(t, "writer")
 	reader := login(t, "reader")
 
+	// Discovery is annotation-only (ADR-020): every fixture is opted in with
+	// athens.warewave.io/enabled; credentials still come from the workload env
+	// or the operator's secrets.
 	want := map[string]string{
-		"athens-demo/orders-db":     "generic",    // secretKeyRef
-		"athens-demo/scratch-db":    "generic",    // literal env
-		"athens-demo/files-db":      "generic",    // _FILE + headless service
-		"athens-demo/legacy-crm":    "annotation", // annotation + ro credential
+		"athens-demo/orders-db":     "annotation", // env secretKeyRef
+		"athens-demo/scratch-db":    "annotation", // literal env
+		"athens-demo/files-db":      "annotation", // _FILE + headless service
+		"athens-demo/legacy-crm":    "annotation", // secret annotation + ro credential
 		"athens-demo/cnpg-db":       "cnpg",
 		"athens-demo/acid-e2e":      "zalando",
-		"athens-demo/pg-postgresql": "generic", // bitnami chart
+		"athens-demo/pg-postgresql": "annotation", // bitnami chart, annotated after install
 	}
 	var got map[string]target
 	waitFor(t, 2*time.Minute, "all fixture targets", func() bool {

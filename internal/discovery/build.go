@@ -21,13 +21,16 @@ import (
 // Options are the discovery settings Build needs.
 type Options struct {
 	AnnotationPrefix string
-	ClusterDomain    string
-	UseFQDN          bool
-	DefaultSSLMode   string
-	CNPG             config.CNPG
-	Zalando          config.Zalando
-	Generic          config.Generic
-	imageRE          *regexp.Regexp
+	// RequireAnnotation: only objects with <prefix>/enabled: "true" become
+	// targets (ADR-020).
+	RequireAnnotation bool
+	ClusterDomain     string
+	UseFQDN           bool
+	DefaultSSLMode    string
+	CNPG              config.CNPG
+	Zalando           config.Zalando
+	Generic           config.Generic
+	imageRE           *regexp.Regexp
 }
 
 func OptionsFromConfig(c config.Discovery) (Options, error) {
@@ -36,7 +39,7 @@ func OptionsFromConfig(c config.Discovery) (Options, error) {
 		return Options{}, err
 	}
 	return Options{
-		AnnotationPrefix: c.AnnotationPrefix, ClusterDomain: c.ClusterDomain, UseFQDN: c.UseFQDN,
+		AnnotationPrefix: c.AnnotationPrefix, RequireAnnotation: c.RequireAnnotation, ClusterDomain: c.ClusterDomain, UseFQDN: c.UseFQDN,
 		DefaultSSLMode: c.DefaultSSLMode, CNPG: c.CNPG, Zalando: c.Zalando, Generic: c.Generic, imageRE: re,
 	}, nil
 }
@@ -206,7 +209,7 @@ func (b *builder) fromWorkload(w workload) {
 	}
 	annotated := enabled == "true"
 	if !annotated {
-		if !b.opt.Generic.Enabled || operatorOwned(w.meta) || operatorOwned(w.tmpl.ObjectMeta) {
+		if b.opt.RequireAnnotation || !b.opt.Generic.Enabled || operatorOwned(w.meta) || operatorOwned(w.tmpl.ObjectMeta) {
 			return
 		}
 	}
@@ -480,9 +483,16 @@ func (b *builder) fromAnnotatedService(s *corev1.Service) {
 
 // ---- CloudNativePG ----
 
+// optedIn applies the enabled annotation to an operator cluster: "false"
+// always hides it, and with RequireAnnotation only "true" shows it.
+func (b *builder) optedIn(meta metav1.ObjectMeta) bool {
+	v, _ := b.ann(meta, "enabled")
+	return v == "true" || (v != "false" && !b.opt.RequireAnnotation)
+}
+
 func (b *builder) fromCNPG(u *unstructured.Unstructured) {
 	meta := metaOf(u)
-	if v, _ := b.ann(meta, "enabled"); v == "false" {
+	if !b.optedIn(meta) {
 		return
 	}
 	name := u.GetName()
@@ -520,7 +530,7 @@ func (b *builder) fromCNPG(u *unstructured.Unstructured) {
 
 func (b *builder) fromZalando(u *unstructured.Unstructured) {
 	meta := metaOf(u)
-	if v, _ := b.ann(meta, "enabled"); v == "false" {
+	if !b.optedIn(meta) {
 		return
 	}
 	name := u.GetName()

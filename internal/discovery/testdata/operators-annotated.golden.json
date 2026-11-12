@@ -1,0 +1,142 @@
+{
+  "targets": [
+    {
+      "id": "demo/acid-ledger",
+      "namespace": "demo",
+      "name": "acid-ledger",
+      "displayName": "acid-ledger",
+      "source": "zalando",
+      "owner": {
+        "kind": "postgresql",
+        "name": "acid-ledger",
+        "uid": "uid-ledger"
+      },
+      "service": "acid-ledger",
+      "host": "acid-ledger.demo.svc",
+      "port": 5432,
+      "databases": [
+        "ledger"
+      ],
+      "defaultDB": "ledger",
+      "sslMode": "require",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "ledger.acid-ledger.credentials.postgresql.acid.zalan.do",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "ledger.acid-ledger.credentials.postgresql.acid.zalan.do",
+            "key": "password"
+          }
+        }
+      }
+    },
+    {
+      "id": "demo/acid-unlisted",
+      "namespace": "demo",
+      "name": "acid-unlisted",
+      "displayName": "acid-unlisted",
+      "source": "zalando",
+      "owner": {
+        "kind": "postgresql",
+        "name": "acid-unlisted",
+        "uid": "uid-unlisted"
+      },
+      "service": "acid-unlisted",
+      "host": "acid-unlisted.demo.svc",
+      "port": 5432,
+      "databases": [
+        "app"
+      ],
+      "defaultDB": "app",
+      "sslMode": "require",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "app.acid-unlisted.credentials.postgresql.acid.zalan.do",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "app.acid-unlisted.credentials.postgresql.acid.zalan.do",
+            "key": "password"
+          }
+        }
+      }
+    },
+    {
+      "id": "demo/billing",
+      "namespace": "demo",
+      "name": "billing",
+      "displayName": "billing",
+      "source": "cnpg",
+      "owner": {
+        "kind": "Cluster",
+        "name": "billing",
+        "uid": "uid-billing"
+      },
+      "service": "billing-rw",
+      "host": "billing-rw.demo.svc",
+      "port": 5432,
+      "databases": [
+        "billing"
+      ],
+      "defaultDB": "billing",
+      "sslMode": "require",
+      "environment": "production",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "billing-app",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "billing-app",
+            "key": "password"
+          }
+        }
+      }
+    },
+    {
+      "id": "demo/scratchpad",
+      "namespace": "demo",
+      "name": "scratchpad",
+      "displayName": "scratchpad",
+      "source": "cnpg",
+      "owner": {
+        "kind": "Cluster",
+        "name": "scratchpad",
+        "uid": "uid-scratchpad"
+      },
+      "service": "scratchpad-rw",
+      "host": "scratchpad-rw.demo.svc",
+      "port": 5432,
+      "databases": [
+        "app"
+      ],
+      "defaultDB": "app",
+      "sslMode": "require",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "scratchpad-app",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "scratchpad-app",
+            "key": "password"
+          }
+        }
+      }
+    }
+  ],
+  "problems": null
+}

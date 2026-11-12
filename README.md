@@ -101,9 +101,12 @@ can be overridden with `ATHENS_<PATH>` environment variables, e.g.
 
 ### Make databases discoverable
 
-Most workloads are found automatically. To describe one explicitly (or to add
-a read-only credential, environment badge or display name), annotate the
-StatefulSet, Deployment, Service or operator CR:
+Discovery is opt-in: a database appears in athens only when its StatefulSet,
+Deployment, Service, CloudNativePG `Cluster` or Zalando `postgresql` carries
+`athens.warewave.io/enabled: "true"` (ADR-020). The minimum is that one line;
+athens then reads the credentials from the container env (or from the
+operator's secrets for CNPG/Zalando). Add more annotations for an explicit
+secret, a read-only credential, an environment badge or a display name:
 
 ```yaml
 metadata:
@@ -115,8 +118,13 @@ metadata:
     athens.warewave.io/display-name: Orders
 ```
 
-`athens.warewave.io/enabled: "false"` hides a workload. All annotations are
-listed in [`docs/DISCOVERY.md`](docs/DISCOVERY.md) §4.1.
+```bash
+kubectl -n payments annotate statefulset orders-db athens.warewave.io/enabled=true
+```
+
+All annotations are listed in [`docs/DISCOVERY.md`](docs/DISCOVERY.md) §4.1.
+Setting `discovery.requireAnnotation: false` switches to automatic discovery of
+unannotated postgres workloads and operator clusters.
 
 ## Development
 

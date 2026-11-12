@@ -50,6 +50,10 @@ discovery:
   clusterDomain: "cluster.local"
   defaultSSLMode: "prefer"
   annotationPrefix: "athens.warewave.io"
+  # Only objects annotated athens.warewave.io/enabled: "true" are shown
+  # (ADR-020). Set to false to also find unannotated postgres workloads and
+  # operator clusters automatically.
+  requireAnnotation: true
   cnpg:
     enabled: true
     useSuperuser: false

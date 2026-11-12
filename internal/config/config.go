@@ -106,9 +106,13 @@ type Discovery struct {
 	ClusterDomain    string   `yaml:"clusterDomain"`
 	DefaultSSLMode   string   `yaml:"defaultSSLMode"`
 	AnnotationPrefix string   `yaml:"annotationPrefix"`
-	CNPG             CNPG     `yaml:"cnpg"`
-	Zalando          Zalando  `yaml:"zalando"`
-	Generic          Generic  `yaml:"generic"`
+	// RequireAnnotation limits discovery to objects carrying
+	// <annotationPrefix>/enabled: "true" (ADR-020). When false, unannotated
+	// postgres workloads and operator clusters are found automatically.
+	RequireAnnotation bool    `yaml:"requireAnnotation"`
+	CNPG              CNPG    `yaml:"cnpg"`
+	Zalando           Zalando `yaml:"zalando"`
+	Generic           Generic `yaml:"generic"`
 }
 
 type CNPG struct {
@@ -169,11 +173,12 @@ func Default() Config {
 		},
 		Auth: Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
 		Discovery: Discovery{
-			Resync:           Duration(10 * time.Minute),
-			ClusterDomain:    "cluster.local",
-			DefaultSSLMode:   "prefer",
-			AnnotationPrefix: version.DefaultAnnotationPrefix,
-			CNPG:             CNPG{Enabled: true},
+			Resync:            Duration(10 * time.Minute),
+			ClusterDomain:     "cluster.local",
+			DefaultSSLMode:    "prefer",
+			AnnotationPrefix:  version.DefaultAnnotationPrefix,
+			RequireAnnotation: true,
+			CNPG:              CNPG{Enabled: true},
 			Zalando: Zalando{
 				Enabled:        true,
 				SecretTemplate: "{username}.{cluster}.credentials.postgresql.acid.zalan.do", // #nosec G101 -- secret name template, not a credential

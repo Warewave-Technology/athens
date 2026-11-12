@@ -49,9 +49,16 @@ func TestResolveFixtures(t *testing.T) {
 		"demo/db-sts":                {"postgres", "collision-sts-pw"},
 		"demo/db-deploy":             {"postgres", "collision-deploy-pw"},
 		"demo/analytics":             {"analyst", "analytics-secret-pw"},
+		"demo/billing":               {"billing", "billing-app-pw"},
+		"demo/scratchpad":            {"app", "scratchpad-app-pw"},
+		"demo/acid-ledger":           {"ledger", "ledger-pw"},
+		"demo/acid-unlisted":         {"app", "unlisted-pw"},
 	}
 	wantDB := map[string]string{"demo/orders-db": "orders", "demo/inventory": "inventory", "demo/files": "filer", "demo/pg": "appdb"}
-	opt, err := discovery.OptionsFromConfig(config.Default().Discovery)
+	// automatic mode, so every fixture pattern yields a target to resolve
+	dc := config.Default().Discovery
+	dc.RequireAnnotation = false
+	opt, err := discovery.OptionsFromConfig(dc)
 	if err != nil {
 		t.Fatal(err)
 	}

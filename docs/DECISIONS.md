@@ -143,3 +143,15 @@ darker `--accent-fill` / `--danger-fill` so white labels pass WCAG AA, and
 body/secondary/tertiary text measure 14.2 / 7.2 / 4.7:1 on the surface. Theme
 tokens carry no colour transitions: Safari kept stale colours on transitioned
 elements after a theme switch.
+
+## ADR-020 Discovery is opt-in (annotation-only) by default
+Automatic discovery showed every postgres-looking workload in the listed
+namespaces, including scratch databases and copies nobody meant to expose.
+The owner wants exposure to be an explicit decision per database. →
+`discovery.requireAnnotation: true` (default): only StatefulSets,
+Deployments, Services, CNPG Clusters and Zalando postgresqls annotated
+`athens.warewave.io/enabled: "true"` become targets. One annotation is enough:
+credential resolution from the container env (§4.4) and from operator secrets
+(§4.2, §4.3) still works for annotated objects, so teams don't have to copy
+secret names into annotations. `requireAnnotation: false` restores automatic
+discovery. RBAC is unchanged (list/watch is needed to read the annotations).

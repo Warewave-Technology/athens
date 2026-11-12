@@ -1,0 +1,60 @@
+# Operator clusters: only the annotated ones are targets in annotation-only mode.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: billing
+  uid: uid-billing
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/environment: production
+spec:
+  instances: 2
+  bootstrap:
+    initdb: {database: billing, owner: billing}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: scratchpad, uid: uid-scratchpad}
+spec:
+  instances: 1
+---
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: acid-ledger
+  uid: uid-ledger
+  annotations: {athens.warewave.io/enabled: "true"}
+spec:
+  teamId: acid
+  numberOfInstances: 1
+  users: {ledger: []}
+  databases: {ledger: ledger}
+---
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata: {name: acid-unlisted, uid: uid-unlisted}
+spec:
+  teamId: acid
+  numberOfInstances: 1
+  users: {app: []}
+  databases: {app: app}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: billing-app}
+stringData: {username: billing, password: billing-app-pw}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: scratchpad-app}
+stringData: {username: app, password: scratchpad-app-pw}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: ledger.acid-ledger.credentials.postgresql.acid.zalan.do}
+stringData: {username: ledger, password: ledger-pw}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: app.acid-unlisted.credentials.postgresql.acid.zalan.do}
+stringData: {username: app, password: unlisted-pw}

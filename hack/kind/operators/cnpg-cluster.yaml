@@ -4,6 +4,7 @@ metadata:
   name: cnpg-db
   namespace: athens-demo
   annotations:
+    athens.warewave.io/enabled: "true"
     athens.warewave.io/environment: staging
 spec:
   instances: 1

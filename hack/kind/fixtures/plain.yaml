@@ -1,4 +1,5 @@
-# Plain Postgres workloads for the generic source (DISCOVERY §4.4).
+# Plain Postgres workloads, opted in with the enabled annotation; credentials
+# come from the container env (secretKeyRef, literal, _FILE).
 apiVersion: v1
 kind: Namespace
 metadata: {name: athens-demo}
@@ -11,7 +12,10 @@ stringData: {user: orders, password: orders-pw-e2e, db: orders}
 # official image, credentials from secretKeyRef
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: orders-db, namespace: athens-demo}
+metadata:
+  name: orders-db
+  namespace: athens-demo
+  annotations: {athens.warewave.io/enabled: "true"}
 spec:
   serviceName: orders-db
   selector: {matchLabels: {app: orders-db}}
@@ -42,7 +46,10 @@ spec:
 # official image, literal password in the pod spec (warning expected)
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: scratch-db, namespace: athens-demo}
+metadata:
+  name: scratch-db
+  namespace: athens-demo
+  annotations: {athens.warewave.io/enabled: "true"}
 spec:
   selector: {matchLabels: {app: scratch-db}}
   template:
@@ -71,7 +78,10 @@ stringData: {password: files-pw-e2e}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: files-db, namespace: athens-demo}
+metadata:
+  name: files-db
+  namespace: athens-demo
+  annotations: {athens.warewave.io/enabled: "true"}
 spec:
   serviceName: files-db-hl
   selector: {matchLabels: {app: files-db}}
