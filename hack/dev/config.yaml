@@ -19,6 +19,10 @@ authz:
       groups: ["dev-writers"]
       namespaces: ["*"]
       level: write
+    - name: dev-read
+      groups: ["dev-readers"]
+      namespaces: ["*"]
+      level: read
 discovery:
   namespaces: ["athens-demo"]
 store:

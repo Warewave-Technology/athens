@@ -7,11 +7,13 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -72,9 +74,18 @@ func main() {
 		users[strings.ToLower(name)] = &user{oid: "oid-" + strings.ToLower(name), tid: tid, email: email, name: name, groups: strings.Split(groups, ",")}
 	}
 	if len(users) == 0 {
-		users["dev"] = &user{oid: "oid-dev", tid: tid, email: "dev@example.com", name: "Dev User", groups: []string{"dev-admins", "dev-writers"}}
+		// Local development: one user per access level (hack/dev/config.yaml rules).
+		for _, u := range []*user{
+			{oid: "oid-dev", email: "dev@example.com", name: "Dev Admin", groups: []string{"dev-admins", "dev-writers"}},
+			{oid: "oid-writer", email: "writer@example.com", name: "Wanda Writer", groups: []string{"dev-writers"}},
+			{oid: "oid-reader", email: "reader@example.com", name: "Rita Reader", groups: []string{"dev-readers"}},
+			{oid: "oid-outsider", email: "outsider@example.com", name: "Otto Outsider", groups: []string{"some-other-group"}},
+		} {
+			u.tid = tid
+			users[strings.TrimPrefix(u.oid, "oid-")] = u
+		}
 	}
-	def := env("MOCKIDP_DEFAULT_USER", "dev")
+	def := env("MOCKIDP_DEFAULT_USER", "")
 
 	m, err := mockoidc.NewServer(nil)
 	if err != nil {
@@ -87,6 +98,15 @@ func main() {
 				name := strings.ToLower(r.URL.Query().Get("login_hint"))
 				if name == "" {
 					name = def
+				}
+				if name == "" && len(users) > 1 {
+					pickUser(w, r, users) // sign-in screen: choose who to be
+					return
+				}
+				if name == "" {
+					for k := range users {
+						name = k
+					}
 				}
 				if u, ok := users[name]; ok {
 					m.QueueUser(u)
@@ -110,4 +130,33 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	_ = m.Shutdown()
+}
+
+var pickTmpl = template.Must(template.New("pick").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Mock IdP · sign in</title><style>body{font-family:system-ui,sans-serif;background:#282828;color:#ebdbb2;display:grid;
+place-items:center;min-height:100vh;margin:0}main{width:28rem;padding:1.5rem 2rem;border:1px solid #504945;border-radius:8px;
+background:#32302f}h1{font-size:1.1rem}a{display:block;padding:.7rem .9rem;margin:.5rem 0;border:1px solid #504945;border-radius:6px;
+color:#ebdbb2;text-decoration:none}a:hover{background:#3c3836;border-color:#83a598}small{color:#a89984}</style></head><body><main>
+<h1>Mock IdP — choose a user</h1><p><small>Local development only. Pick who to sign in as.</small></p>
+{{range .}}<a href="{{.URL}}"><b>{{.Name}}</b> · {{.Email}}<br><small>groups: {{.Groups}}</small></a>{{end}}
+</main></body></html>`))
+
+func pickUser(w http.ResponseWriter, r *http.Request, users map[string]*user) {
+	type choice struct{ URL, Name, Email, Groups string }
+	names := make([]string, 0, len(users))
+	for k := range users {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	var cs []choice
+	for _, k := range names {
+		u := users[k]
+		q := r.URL.Query()
+		q.Set("login_hint", k)
+		cs = append(cs, choice{URL: r.URL.Path + "?" + q.Encode(), Name: u.name, Email: u.email, Groups: strings.Join(u.groups, ", ")})
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := pickTmpl.Execute(w, cs); err != nil {
+		log.Print(err)
+	}
 }
