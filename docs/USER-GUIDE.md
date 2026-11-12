@@ -24,9 +24,9 @@ account; athens has no separate password. After signing in you return to the
 page you opened.
 
 What you can see depends on your Microsoft Entra groups. If you see "You
-don't have access to any databases yet", ask the athens administrators to add
-your group, or ask the team that owns the database to add you to its access
-list.
+don't have access to any databases yet", ask the team that owns the database
+to add one of your groups to its access list (the `athens.warewave.io/access`
+annotation on the database).
 
 Sessions last up to 8 hours and end after an hour without activity. Sign out
 from the menu under your name at the bottom of the sidebar.
@@ -236,8 +236,8 @@ Opening these pages is itself recorded in the audit log.
 
 ## FAQ
 
-**A database I expect is missing.** Your groups may not have access to it,
-or it is not annotated for athens. Admins can check Administration →
+**A database I expect is missing.** Its access list may not include your
+groups, or it is not annotated for athens. Admins can check Administration →
 Discovery. Owners: see [DATABASES.md](DATABASES.md).
 
 **Why can't I edit this table?** You have `read` access, the database is

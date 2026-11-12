@@ -9,7 +9,7 @@ Package: `internal/discovery` (finding targets) and `internal/credentials`
 > below is the original sketch.
 
 ```go
-type SourceKind string // "annotation" | "cnpg" | "zalando" | "generic"
+type SourceKind string // "annotation" | "cnpg" | "zalando"
 
 type Target struct {
     ID          string            // "<namespace>/<name>", unique
@@ -58,70 +58,64 @@ Rules:
 
 ## 2. Informers
 
-For each namespace in `discovery.namespaces`, a namespaced
-`SharedInformerFactory` (`informers.WithNamespace`) for StatefulSets,
-Deployments and Services (no Pods; ADR-016). CRD sources
-via `dynamicinformer.NewFilteredDynamicSharedInformerFactory` per namespace,
-started only if the CRD exists (check via discovery API at startup and every
-5 min; start informer when it appears).
+Scope (ADR-024): with `discovery.namespaces` empty (the default) one
+cluster-wide `SharedInformerFactory` watches StatefulSets, Deployments and
+Services in every namespace; with namespaces listed, one namespaced factory
+(`informers.WithNamespace`) per namespace. No Pods (ADR-016). CRD sources
+via `dynamicinformer.NewFilteredDynamicSharedInformerFactory` with the same
+scope, started only if the CRD exists (check via discovery API at startup
+and every 5 min; start informer when it appears).
 
 Resync period: `discovery.resync` (default 10m). Any event on a relevant object
-triggers a debounced (500ms) full rebuild for that namespace. Rebuild = run all
-sources over the cached objects of the namespace, merge with priority (§3),
-diff against registry, emit events. This is simpler and correct; namespaces
-are small.
+triggers a debounced (500ms) full rebuild of the object's namespace. Rebuild =
+run all sources over the cached objects of that namespace, merge with
+priority (§3), diff against registry, emit events. In a cluster-wide watch,
+namespaces without targets or problems are dropped from the status list so
+the admin page shows only namespaces that matter.
 
-## 2a. Opt-in (annotation-only) mode — the default
+## 2a. Annotation only (ADR-020, ADR-024)
 
-With `discovery.requireAnnotation: true` (default, ADR-020) an object becomes a
-target only if it carries `<prefix>/enabled: "true"`:
+An object becomes a target only if it carries `<prefix>/enabled: "true"`:
 - StatefulSet / Deployment: annotation source; credentials from the `secret`
   annotation, else from the container env exactly as §4.4 describes.
 - Service: annotation source (needs the `secret` annotation, §4.1).
 - CNPG `Cluster` / Zalando `postgresql`: the cnpg / zalando sources (§4.2,
-  §4.3) run for annotated clusters only.
-Unannotated workloads and clusters are ignored silently. With
-`requireAnnotation: false` every source in §4 also runs for unannotated
-objects (the original behaviour).
+  §4.3).
+Unannotated workloads and clusters are ignored silently; there is no
+automatic image-based discovery any more.
 
-## 2b. Access annotations (ADR-022)
+## 2b. Access annotations (ADR-022, ADR-023)
 
-Two annotations, on the same object as `enabled` (StatefulSet, Deployment,
-Service, CNPG `Cluster`, Zalando `postgresql`), shape who may use a target:
+Two annotations, on the same object as `enabled`, decide who may use a
+target. There are no access rules in the configuration.
 
+- `<prefix>/access: "system-admins:rw,developers:ro"` — the target's access
+  list, **required**. Entries are separated by commas, semicolons or spaces;
+  levels are `rw`/`write` or `ro`/`read`; a group listed twice gets the
+  higher level. A group is the value in the token's `groups` claim (an Entra
+  object ID, or a name when Entra is configured to emit names), or a name
+  from `authz.groupAliases`. Invalid entries are dropped with a warning.
+  Without the annotation, or when it grants nobody, nobody can use the
+  target (it is still listed on Admin → Discovery with a warning).
 - `<prefix>/readonly: "true"` — every user's level on the target is capped at
   `read`: READ ONLY transactions, the read-only credential when present, no
   grid edits, DML/DDL rejected in the editor. Any value other than
   `true`/`false` is treated as `true` (with a warning).
-- `<prefix>/access: "system-admins:rw,developers:ro"` — the target's access
-  list. When present it **replaces** the `authz.rules` for this target: only
-  the listed groups see it. Entries are separated by commas, semicolons or
-  spaces; levels are `rw`/`write` or `ro`/`read`; a group listed twice gets
-  the higher level. A group is an Entra group ID as in the token, or a name
-  from `authz.groupAliases`. Invalid entries are dropped with a warning; an
-  annotation that ends up granting nobody hides the target from everyone
-  (fails closed).
 
-Both together: everyone on the access list gets `ro`. The global
-`authz.readOnly` switch still applies, and `authz.adminGroups` still gets no
-data access by itself. `authz.annotationAccess: false` makes athens ignore the
-`access` annotation (rules apply; `readonly` still does). Both annotations also
-apply to unannotated targets in automatic mode. Admin → Discovery shows the
-effective access source per target.
+The global `authz.readOnly` switch still applies, and `authz.adminGroups`
+gets no data access by itself.
 
 ## 3. Source priority and dedup
 
-Order: `annotation` > `cnpg` > `zalando` > `generic`.
+Order: `annotation` (workload or Service) > `cnpg` > `zalando`.
 
 - Identity for dedup = `(namespace, host, port)`.
 - Higher-priority source wins; lower one is dropped (debug log).
-- `generic` must skip workloads owned by operators:
-  - pods/sts with label `cnpg.io/cluster` or ownerReference kind `Cluster`
-    (group `postgresql.cnpg.io`)
-  - sts with label `application: spilo` or ownerReference kind `postgresql`
-    (group `acid.zalan.do`)
-- Opt-out: annotation `athens.warewave.io/enabled: "false"` on the workload,
-  Service or CR removes it from all sources.
+- Operator-owned workloads (CNPG instance pods, Zalando spilo StatefulSets)
+  carry no annotation and are therefore ignored; annotate the `Cluster` /
+  `postgresql` instead.
+- A Service annotated `athens.warewave.io/enabled: "false"` hides the
+  workloads that would connect through it.
 - Name collisions (two targets same ID): append `-<kind-short>` suffix
   (`-sts`, `-deploy`), add warning.
 
@@ -147,9 +141,9 @@ On a StatefulSet, Deployment or Service:
 | `sslmode` | no | `discovery.defaultSSLMode` (prefer) |
 | `ca-secret` / `ca-key` | no | `ca.crt` |
 | `readonly` | no | `"true"` caps every user at read (§2b) |
-| `access` | no | `group:rw,group:ro,...` replaces the config rules (§2b) |
+| `access` | yes, to be usable | `group:rw,group:ro,...`: who may use the target (§2b) |
 
-\* If `secret` missing on a workload: fall back to generic env resolution (§4.4)
+\* If `secret` missing on a workload: fall back to env resolution (§4.4)
 for credentials but keep the annotation metadata. If still unresolved: target
 not registered, warning recorded.
 
@@ -178,12 +172,13 @@ not registered, warning recorded.
 - Databases hint = keys of `spec.databases`; DefaultDB = first.
 - SSLMode default `require`.
 
-### 4.4 generic (StatefulSet / Deployment)
-Candidate if any container image (repo part, without registry/tag) matches
-`discovery.generic.imagePattern`, default:
-`(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*)$`.
+### 4.4 Credentials from the workload env (annotated StatefulSet / Deployment without `secret`)
+The postgres container is the first one whose image (repo part, without
+registry/tag) matches `discovery.imagePattern`, default
+`(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*)$`;
+without a match, the first container.
 
-Credential resolution in the matching container, first hit wins:
+Credential resolution in that container, first hit wins:
 
 Password env names (in order): `POSTGRES_PASSWORD`, `POSTGRESQL_PASSWORD`,
 `POSTGRES_POSTGRES_PASSWORD`, `POSTGRESQL_POSTGRES_PASSWORD`.
@@ -211,7 +206,7 @@ Value forms to support for each env:
 Port: container port named `postgresql`/`postgres`/`tcp-postgresql`, else
 containerPort 5432, else 5432.
 
-### 4.5 Service matching (annotation without `service`, and generic)
+### 4.5 Service matching (annotated workload without `service`)
 Among Services in the namespace:
 1. Selector non-empty and selector ⊆ workload pod template labels.
 2. Exposes a port whose `targetPort` equals the container port (number or name).
@@ -230,6 +225,9 @@ Service. Pool manager uses RO for users whose effective level is `read`.
 If RO auth fails, fall back to RW + READ ONLY tx and add a target warning.
 
 ## 6. Test fixtures (fake clientset), one file each in `internal/discovery/testdata/`
+Every workload and operator resource in the fixtures is annotated
+`enabled: "true"` unless the fixture is about ignoring it.
+
 1. `official-literal.yaml`   — sts postgres:16, POSTGRES_PASSWORD literal, svc
 2. `official-secretref.yaml` — deployment, secretKeyRef user+password, svc
 3. `official-envfrom.yaml`   — envFrom secretRef with prefix
@@ -237,12 +235,14 @@ If RO auth fails, fall back to RW + READ ONLY tx and add a target warning.
 5. `bitnami.yaml`            — chart-like sts, `_FILE` vars, svc + `-hl` svc
 6. `headless-only.yaml`      — sts with only headless svc → pod-0 host + warning
 7. `no-service.yaml`         — → not registered, warning
-8. `cnpg.yaml`               — Cluster CR + secrets + operator-owned pods (generic must skip)
-9. `zalando.yaml`            — postgresql CR with users/databases + spilo sts (generic must skip)
-10. `annotation-override.yaml` — annotated sts that would also match generic → annotation wins
-11. `opt-out.yaml`           — enabled=false
+8. `cnpg.yaml`               — Cluster CR + secrets + operator-owned (unannotated) objects that must be ignored
+9. `zalando.yaml`            — postgresql CR with users/databases + spilo sts that must be ignored
+10. `annotation-override.yaml` — annotated sts with explicit secret, ro secret, sslmode
+11. `opt-out.yaml`           — enabled=false, and a Service opt-out hiding its workload
 12. `configmap-password.yaml` — password via configMapRef → skipped + warning
 13. `name-collision.yaml`    — sts and deployment same name
 
 Each fixture has an expected-targets golden JSON (credential refs included,
 values never).
+14. `operators-annotated.yaml` — annotated and unannotated CNPG/Zalando clusters
+15. `access.yaml`            — readonly + access annotations, invalid entries, empty access

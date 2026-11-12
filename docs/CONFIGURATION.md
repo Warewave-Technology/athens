@@ -18,7 +18,10 @@ The annotated full example is [`config.example.yaml`](../config.example.yaml).
 
 ## Minimal configuration
 
-Everything not shown here has a default.
+Everything not shown here has a default. There is no list of databases and
+no access rules here: databases and the groups that may use them come from
+annotations on the databases ([DATABASES.md](DATABASES.md),
+[ACCESS-CONTROL.md](ACCESS-CONTROL.md)).
 
 ```yaml
 server:
@@ -27,17 +30,9 @@ oidc:
   issuer: https://login.microsoftonline.com/<TENANT_ID>/v2.0
   clientID: <APPLICATION_CLIENT_ID>
   # clientSecret: from ATHENS_OIDC_CLIENTSECRET
-auth: {}
-  # sessionKey: from ATHENS_AUTH_SESSIONKEY
+# auth.sessionKey: from ATHENS_AUTH_SESSIONKEY
 authz:
   adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]
-  rules:
-    - name: dba
-      groups: ["<GROUP_ID_DBA>"]
-      namespaces: ["*"]
-      level: write
-discovery:
-  namespaces: ["payments", "orders"]
 ```
 
 ## Environment overrides
@@ -51,11 +46,11 @@ path joined by `_`:
 | `auth.sessionKey` | `ATHENS_AUTH_SESSIONKEY` | from a Secret |
 | `limits.statementTimeout` | `ATHENS_LIMITS_STATEMENTTIMEOUT` | `60s` |
 | `authz.readOnly` | `ATHENS_AUTHZ_READONLY` | `true` |
-| `discovery.namespaces` | `ATHENS_DISCOVERY_NAMESPACES` | `payments,orders` (comma separated) |
+| `discovery.namespaces` | `ATHENS_DISCOVERY_NAMESPACES` | `payments,orders` (comma separated; empty = whole cluster) |
 | `log.level` | `ATHENS_LOG_LEVEL` | `debug` |
 
-`authz.rules` and the maps (`authz.groupAliases`, `server.devHostOverrides`)
-can only be set in the file. The Helm chart already passes the two secrets
+The maps (`authz.groupAliases`, `server.devHostOverrides`) can only be set in
+the file. The Helm chart already passes the two secrets
 this way; add others with `extraEnv`.
 
 ## server
@@ -92,29 +87,14 @@ this way; add others with `extraEnv`.
 
 ## authz
 
-Details and examples: [ACCESS-CONTROL.md](ACCESS-CONTROL.md).
+Access to databases is not configured here; it comes from each database's
+`athens.warewave.io/access` annotation ([ACCESS-CONTROL.md](ACCESS-CONTROL.md)).
 
 | Key | Default | Description |
 |---|---|---|
-| `readOnly` | `false` | emergency switch: everyone is capped at `read` |
-| `adminGroups` | `[]` | group IDs that see the Administration pages (no data access by itself) |
-| `rules` | `[]` | list of rules, below |
-| `annotationAccess` | `true` | let the `athens.warewave.io/access` annotation replace the rules for its database |
-| `groupAliases` | `{}` | `name: group-id` pairs usable in `access` annotations. Names may not contain `:`, `,` or spaces |
-
-A rule:
-
-| Key | Description |
-|---|---|
-| `name` | label used in error messages |
-| `groups` | group object IDs (at least one) |
-| `namespaces` | namespace globs (default `*`) |
-| `targets` | target name globs: the workload, Service or cluster name (default `*`) |
-| `databases` | database name globs (default `*`) |
-| `level` | `read` or `write` |
-
-Each rule needs at least one of `namespaces`, `targets`, `databases`. The
-highest matching level wins.
+| `readOnly` | `false` | emergency switch: everyone is capped at read access |
+| `adminGroups` | `[]` | groups that see the Administration pages (no data access by itself) |
+| `groupAliases` | `{}` | optional `name: group-id` pairs, so access annotations can say `dba:rw` instead of a group ID. Names may not contain `:`, `,` or spaces |
 
 ```yaml
 authz:
@@ -122,21 +102,19 @@ authz:
   groupAliases:
     dba: "7c1f0f6e-1111-4aaa-9bbb-000000000001"
     payments-dev: "7c1f0f6e-1111-4aaa-9bbb-000000000002"
-  rules:
-    - {name: dba, groups: ["7c1f0f6e-1111-4aaa-9bbb-000000000001"], namespaces: ["*"], level: write}
-    - {name: payments-read, groups: ["7c1f0f6e-1111-4aaa-9bbb-000000000002"], namespaces: ["payments*"], level: read}
 ```
 
 ## discovery
 
-How databases are found: [DATABASES.md](DATABASES.md) (how-to) and
-[DISCOVERY.md](DISCOVERY.md) (exact rules).
+Only objects annotated `athens.warewave.io/enabled: "true"` become databases
+in athens. How to annotate: [DATABASES.md](DATABASES.md); exact rules:
+[DISCOVERY.md](DISCOVERY.md).
 
 | Key | Default | Description |
 |---|---|---|
-| `namespaces` | — (required) | namespaces to watch. No wildcards; the chart creates a Role in each |
-| `requireAnnotation` | `true` | only objects annotated `<prefix>/enabled: "true"` become targets. `false` also finds unannotated postgres workloads and operator clusters |
+| `namespaces` | `[]` (whole cluster) | optional: only watch these namespaces. No wildcards. The Helm chart creates a ClusterRole when empty, else a Role per namespace |
 | `annotationPrefix` | `athens.warewave.io` | prefix of every annotation |
+| `imagePattern` | official, bitnami, postgis, pgvector, timescale images | regular expression over the image repository (no registry, no tag) that picks the postgres container of an annotated workload; without a match the first container is used |
 | `resync` | `10m` | full informer resync (changes are seen immediately anyway) |
 | `useFQDN` | `false` | connect to `<svc>.<ns>.svc.<clusterDomain>` instead of `<svc>.<ns>.svc` |
 | `clusterDomain` | `cluster.local` | used with `useFQDN` |
@@ -147,17 +125,33 @@ How databases are found: [DATABASES.md](DATABASES.md) (how-to) and
 | `zalando.enabled` | `true` | watch Zalando `postgresql`s |
 | `zalando.useSuperuser` | `false` | fall back to `postgres` when no database owner is found |
 | `zalando.secretTemplate` | `{username}.{cluster}.credentials.postgresql.acid.zalan.do` | operator Secret name; must contain `{username}` |
-| `generic.enabled` | `true` | detect plain postgres StatefulSets/Deployments by image |
-| `generic.imagePattern` | official, bitnami, postgis, pgvector, timescale | regular expression over the image repository (no registry, no tag) |
 
-To also detect a custom image, for example `registry.local/team/pg-custom:16`,
-extend the pattern:
+Limit athens to some namespaces:
 
 ```yaml
 discovery:
-  generic:
-    imagePattern: '(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*|team/pg-custom)$'
+  namespaces: ["payments", "payments-staging", "orders"]
 ```
+
+Pick a custom postgres image in multi-container pods, for example
+`registry.local/team/pg-custom:16`:
+
+```yaml
+discovery:
+  imagePattern: '(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*|team/pg-custom)$'
+```
+
+### Removed settings
+
+athens refuses to start when a configuration still contains these, and says
+what replaced them:
+
+| Setting | Replaced by |
+|---|---|
+| `authz.rules` | the `athens.warewave.io/access` annotation on each database (ADR-023) |
+| `authz.annotationAccess` | nothing; the access annotation is the only source (ADR-023) |
+| `discovery.requireAnnotation` | nothing; discovery is always by annotation (ADR-024) |
+| `discovery.generic.*` | `discovery.imagePattern` (ADR-024) |
 
 ## limits
 
@@ -222,14 +216,15 @@ configuration above under `config:` and adds:
 | `networkPolicy.enabled` | `true` | ingress from the ingress controller namespace, egress to the API server, Entra ID, DNS and Postgres |
 | `networkPolicy.ingressNamespaceSelector` | `kubernetes.io/metadata.name: ingress-nginx` | who may reach port 8080 |
 | `networkPolicy.metricsNamespaceSelector` | `kubernetes.io/metadata.name: monitoring` | who may scrape port 9090 |
-| `networkPolicy.postgresPorts` | `[5432]` | Postgres ports allowed towards the discovery namespaces |
+| `networkPolicy.postgresPorts` | `[5432]` | Postgres ports allowed towards the discovery namespaces (all namespaces when the whole cluster is watched) |
 | `networkPolicy.extraEgress` | `[]` | extra egress rules, e.g. an external database |
 | `resources` | 50m / 128Mi requests, 512Mi limit | |
 | `extraEnv` | `[]` | extra environment variables (overrides) |
 | `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity` | | scheduling |
 
-For each namespace in `config.discovery.namespaces`, the chart creates a Role
-and RoleBinding that can `get/list/watch` StatefulSets, Deployments, Services
-and the CNPG/Zalando resources, and `get` Secrets and ConfigMaps. It does not
-grant `list` on Secrets, so athens reads only the Secrets that discovered
-databases reference.
+RBAC: with `config.discovery.namespaces` empty the chart creates a
+ClusterRole and ClusterRoleBinding; with namespaces listed, a Role and
+RoleBinding in each. Either way athens can `get/list/watch` StatefulSets,
+Deployments, Services and the CNPG/Zalando resources, and only `get` Secrets
+and ConfigMaps. Without `list` on Secrets, athens reads only the Secrets that
+annotated databases reference.

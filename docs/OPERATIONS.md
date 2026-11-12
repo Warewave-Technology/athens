@@ -128,10 +128,10 @@ upgrades.
 | Sign-in page "too many groups" | the token has a groups overage claim: set `groupMembershipClaims` to `ApplicationGroup` and assign groups to the enterprise app (README step 1.3/1.4) |
 | Sign-in "not authorized for this application" | `oidc.allowedGroups` is set and the user is in none of them |
 | Sign-in "tenant mismatch" | `oidc.issuer` tenant differs from the user's `tid` (guest accounts from other tenants are rejected) |
-| A user sees no targets | no `authz.rules` entry matches the user's group IDs; the token carries group **object IDs**, not names. Ask the user to sign out and in again after group changes (groups are snapshotted at login) |
-| A database is missing | Admin → Discovery lists every namespace with the reasons workloads were skipped (`no_service`, `credentials_unresolved`, ...) and per-target warnings |
+| A user sees no targets | no database's `athens.warewave.io/access` annotation lists one of the user's groups. The token carries group **object IDs** unless Entra is set to emit names; use IDs or `authz.groupAliases`. Ask the user to sign out and in again after group changes (groups are snapshotted at login) |
+| A database is missing | Admin → Discovery lists every annotated database with warnings (for example "no access annotation") and, per namespace, the annotated objects that could not be added (`no_service`, `credentials_unresolved`, ...) |
 | Target shows `unreachable` | Admin → Pools shows the last connection error; check NetworkPolicy egress (`networkPolicy.postgresPorts`), the Secret keys, and `sslmode` |
-| `/readyz` stays 503 with `discovery:false` | the ServiceAccount lacks list/watch in a listed namespace (check the generated Role) or the API server is unreachable (NetworkPolicy egress to 443/6443) |
+| `/readyz` stays 503 with `discovery:false` | the ServiceAccount lacks list/watch (check the generated ClusterRole, or the Role in each listed namespace) or the API server is unreachable (NetworkPolicy egress to 443/6443) |
 | `audit_write_errors_total` increases | the PVC is full or read-only; audit records still reach stdout |
 | Queries fail with "statement timeout exceeded" | raise `limits.statementTimeout` (default 30s) |
 

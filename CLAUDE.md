@@ -32,7 +32,7 @@ Product name: `athens`. Module `github.com/Warewave-Technology/athens`, image
 cmd/athens/            main: config load, wiring, graceful shutdown
 internal/config/       config struct, YAML + env override, validation
 internal/auth/         OIDC login/callback, sessions, CSRF, middleware
-internal/authz/        rule evaluation (groups -> target/db -> level)
+internal/authz/        level from access/readonly annotations (groups -> target -> level)
 internal/discovery/    sources (annotation, cnpg, zalando, generic), registry
 internal/credentials/  secret resolution at connect time (never cached on disk)
 internal/pgconn/       pool manager, per-query session setup, cancel registry

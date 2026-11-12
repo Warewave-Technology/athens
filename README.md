@@ -17,17 +17,20 @@ never leave the backend.
 
 - **Entra ID single sign-on** (OIDC with PKCE). No local accounts; access
   follows your Entra groups.
-- **Databases appear by annotation.** Annotate a StatefulSet, Deployment,
-  Service, CloudNativePG `Cluster` or Zalando `postgresql` with
-  `athens.warewave.io/enabled: "true"` and it shows up within a second.
-  Credentials are found automatically in the container env or the operator
-  Secrets.
-- **Per-group and per-database access:**
-  - `read` or `write` levels set by rules in the configuration;
-  - or by the database's owners with the `readonly` and `access`
-    annotations.
-  - Read access always runs in `READ ONLY` transactions, with a separate
-    read-only login when one is configured.
+- **Everything is an annotation.** Two lines on a StatefulSet, Deployment,
+  Service, CloudNativePG `Cluster` or Zalando `postgresql` put a database in
+  athens and say who may use it:
+  ```yaml
+  athens.warewave.io/enabled: "true"
+  athens.warewave.io/access: "dba:rw, payments-dev:ro"
+  ```
+  The database shows up within a second, anywhere in the cluster. athens
+  finds the endpoint and the login in the container env or the operator
+  Secrets. The athens configuration has no list of databases and no access
+  rules.
+- **Read-only where it matters:** `athens.warewave.io/readonly: "true"`
+  caps everyone at read. Read access always runs in `READ ONLY`
+  transactions, with a separate read-only login when one is configured.
 - **Data grid** with sorting, filters, paging and CSV export. Rows can be
   edited in place, and athens detects conflicting edits instead of
   overwriting them.
@@ -65,14 +68,15 @@ flowchart LR
   A -->|JSON logs incl. audit| L[Log pipeline]
 ```
 
-1. athens watches the namespaces you list. Each annotated object becomes a
-   **target**: a host, a port and references to the Secret keys that hold
-   the login. athens stores the references, never the values.
-2. A user signs in through Entra ID. athens reads the user's group IDs from
-   the token.
-3. For each request, athens works out the user's level on that database:
-   none, `read` or `write`. Users who have no access to a database don't see
-   it at all.
+1. athens watches the cluster (or the namespaces you list). Each annotated
+   object becomes a **target**: a host, a port, the access list from its
+   annotation, and references to the Secret keys that hold the login. athens
+   stores the references, never the values.
+2. A user signs in through Entra ID. athens reads the user's groups from the
+   token.
+3. For each request, athens matches the user's groups against the target's
+   access list: none, `read` or `write`. Users who are not on the list don't
+   see the database at all.
 4. Queries run on pooled connections. Every statement runs in its own
    transaction with `application_name = athens:<email>`, a statement timeout
    and a lock timeout. For read users the transaction is `READ ONLY`.
@@ -144,7 +148,7 @@ kubectl -n athens-demo annotate deployment scratch-db athens.warewave.io/readonl
    claim Entra sends for more than 200 groups (ADR-007).
 4. **Enterprise applications → athens → Properties:** set *Assignment
    required?* to **Yes**. Then under **Users and groups**, assign every group
-   you use in athens rules, admin groups and `access` annotations.
+   you use in `access` annotations and admin groups.
 5. Note the **Directory (tenant) ID** and the **Application (client) ID**.
 
 ### 2. Create the Secret
@@ -171,26 +175,11 @@ config:
     issuer: https://login.microsoftonline.com/<TENANT_ID>/v2.0
     clientID: <APPLICATION_CLIENT_ID>
   authz:
-    adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]
-    groupAliases:                          # names for access annotations
-      platform: "<GROUP_ID_PLATFORM_ADMINS>"
+    adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]   # see the Administration pages
+    groupAliases:                          # optional: readable names for access annotations
       dba: "<GROUP_ID_DBA>"
       payments-dev: "<GROUP_ID_PAYMENTS_DEV>"
-    rules:
-      - name: dba
-        groups: ["<GROUP_ID_DBA>"]
-        namespaces: ["*"]
-        level: write
-      - name: payments-read
-        groups: ["<GROUP_ID_PAYMENTS_DEV>"]
-        namespaces: ["payments"]
-        level: read
-      - name: payments-write-staging
-        groups: ["<GROUP_ID_PAYMENTS_DEV>"]
-        namespaces: ["payments-staging"]
-        level: write
-  discovery:
-    namespaces: ["payments", "payments-staging", "orders"]   # a Role is created in each
+  # discovery.namespaces: [...]            # optional: watch only these namespaces
 secret:
   existingSecret: athens
 ingress:
@@ -207,7 +196,9 @@ serviceMonitor:
   enabled: true
 ```
 
-All settings: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+That is the whole access configuration: which databases exist and who may
+use them is decided by annotations on the databases (next step). All
+settings: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ### 4. Install the chart
 
@@ -235,18 +226,19 @@ What the chart deploys:
   file system.
 - **A 1 GiB PVC** for the SQLite store. athens runs as a single replica with
   the `Recreate` strategy (ADR-003).
-- **A Role per discovery namespace** that can read workloads, Services and
-  operator resources, and `get` (not `list`) Secrets.
+- **A ClusterRole** that can read workloads, Services and operator resources,
+  and `get` (not `list`) Secrets. With `discovery.namespaces` set, a Role in
+  each listed namespace instead.
 - **A NetworkPolicy**, on by default. It allows ingress from the ingress
-  controller and egress to the API server, Entra ID, DNS and Postgres in the
-  discovery namespaces.
+  controller and egress to the API server, Entra ID, DNS and Postgres.
 
 ## Add a database
 
-Annotate the object that runs it:
+Annotate the object that runs it, naming the groups that may use it:
 
 ```bash
-kubectl -n payments annotate statefulset orders-db athens.warewave.io/enabled=true
+kubectl -n payments annotate statefulset orders-db \
+  athens.warewave.io/enabled=true 'athens.warewave.io/access=dba:rw,payments-dev:ro'
 ```
 
 That is usually all. athens finds the Service and reads the login from the
@@ -257,6 +249,7 @@ display name or the production badge:
 metadata:
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "dba:rw, billing-dev:ro"
     athens.warewave.io/secret: billing-db-admin        # keys username / password
     athens.warewave.io/readonly-secret: billing-db-ro  # used for read users
     athens.warewave.io/display-name: Billing
@@ -267,7 +260,8 @@ CloudNativePG and Zalando clusters are annotated the same way on the
 `Cluster` / `postgresql` resource:
 
 ```bash
-kubectl -n payments annotate clusters.postgresql.cnpg.io payments athens.warewave.io/enabled=true
+kubectl -n payments annotate clusters.postgresql.cnpg.io payments \
+  athens.warewave.io/enabled=true 'athens.warewave.io/access=payments-dev:rw'
 ```
 
 Recipes for plain StatefulSets, Bitnami, CNPG, Zalando and databases outside
@@ -275,27 +269,28 @@ the cluster, with tested manifests: [docs/DATABASES.md](docs/DATABASES.md).
 
 ## Control access
 
-Configuration rules map Entra groups to databases:
-
-```yaml
-authz:
-  rules:
-    - {name: dba, groups: ["<GROUP_ID_DBA>"], namespaces: ["*"], level: write}
-    - {name: bi, groups: ["<GROUP_ID_BI>"], namespaces: ["orders"], databases: ["reporting"], level: read}
-```
-
-The team that owns a database can override this next to the database:
+Access lives on the database. The `access` annotation lists Entra groups and
+their level; everyone else does not see the database. A database without
+the annotation is visible to nobody (admins see it on the Discovery page
+with a warning).
 
 ```yaml
 metadata:
   annotations:
-    athens.warewave.io/readonly: "true"                  # everyone gets read only
-    athens.warewave.io/access: "dba:rw, payments-dev:ro" # only these groups see it
+    athens.warewave.io/access: "dba:rw, payments-dev:ro"  # who may use it
+    athens.warewave.io/readonly: "true"                   # optional: everyone read only
 ```
 
-`access` replaces the rules for that database, and with `readonly` everyone
-on the list is read only. Group names come from `authz.groupAliases`; group
-IDs also work. Evaluation order, worked examples and guardrails:
+| Entry | Means |
+|---|---|
+| `dba:rw` | the `dba` group may read and write |
+| `payments-dev:ro` | the `payments-dev` group may only read |
+| `7c1f0f6e-...:ro` | an Entra group object ID works as is |
+
+Entra tokens carry group IDs by default. For readable names, either let Entra
+emit group names or map names to IDs in `authz.groupAliases`. The athens
+configuration only names the admin groups and an emergency
+`authz.readOnly` switch. Evaluation order, worked examples and guardrails:
 [docs/ACCESS-CONTROL.md](docs/ACCESS-CONTROL.md).
 
 ## Audit
@@ -344,7 +339,7 @@ Details: [docs/SPEC.md](docs/SPEC.md) and the decisions in
 |---|---|---|
 | [USER-GUIDE.md](docs/USER-GUIDE.md) | users | workspace, grid, editing, SQL editor, confirmations, shortcuts |
 | [DATABASES.md](docs/DATABASES.md) | database owners | annotation recipes, read-only logins, access annotations, troubleshooting |
-| [ACCESS-CONTROL.md](docs/ACCESS-CONTROL.md) | operators, owners | levels, rules, annotations, evaluation order, examples |
+| [ACCESS-CONTROL.md](docs/ACCESS-CONTROL.md) | operators, owners | levels, the access annotation, group names, evaluation order, examples |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | operators | every setting, environment overrides, flags, Helm values |
 | [OPERATIONS.md](docs/OPERATIONS.md) | operators | health, metrics, backups, upgrades, secret rotation, audit shipping, troubleshooting |
 | [SPEC.md](docs/SPEC.md) | developers | architecture and security model |

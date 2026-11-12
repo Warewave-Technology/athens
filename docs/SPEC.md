@@ -5,12 +5,14 @@ Status: v1 draft for implementation. Owner: Warewave.
 ## 1. Purpose
 
 A single in-cluster web application that gives engineers browser access to all
-PostgreSQL databases running in selected Kubernetes namespaces:
+PostgreSQL databases running in the cluster:
 
 - Login only through Microsoft Entra ID (OIDC). No local users.
-- PostgreSQL instances are discovered automatically from the cluster
-  (StatefulSets, Deployments, CloudNativePG and Zalando clusters, annotations).
-- Access per user is derived from Entra group membership and config rules.
+- PostgreSQL instances are opted in by annotation on their StatefulSet,
+  Deployment, Service, CloudNativePG or Zalando cluster; athens finds the
+  endpoint and credential references itself.
+- Access per user is derived from Entra group membership and the database's
+  `access` annotation (ADR-023); the athens config holds no access rules.
 - Functional reference: pg-view (schema explorer, data grid/editor, SQL editor
   with history/favorites/drafts, read-only mode, guardrails). Visual reference:
   `docs/design/`.
@@ -26,14 +28,14 @@ PostgreSQL databases running in selected Kubernetes namespaces:
 
 | Role | Source | Can |
 |---|---|---|
-| Viewer | rule level `read` | see target, browse schema/data, run SQL in READ ONLY tx |
-| Editor | rule level `write` | + edit rows in grid, run DML/DDL in SQL editor (with confirm for destructive) |
+| Viewer | `access` entry `ro` | see target, browse schema/data, run SQL in READ ONLY tx |
+| Editor | `access` entry `rw` | + edit rows in grid, run DML/DDL in SQL editor (with confirm for destructive) |
 | App admin | member of `authz.adminGroups` | + view audit log, discovery status, pool status for all targets |
 
-A user with no matching rule for a target does not see that target at all
-(404, not 403, to avoid enumeration). A target's `access` annotation replaces
-the rules for that target and its `readonly` annotation caps everyone at read
-(DISCOVERY.md §2b, ADR-022).
+A user whose groups are not on a target's `access` annotation does not see
+that target at all (404, not 403, to avoid enumeration); a target without
+the annotation is invisible to everyone. The `readonly` annotation caps
+everyone at read (DISCOVERY.md §2b, ADR-022, ADR-023).
 
 ## 3. Architecture
 
@@ -52,7 +54,8 @@ Single Go binary serves: SPA static assets, `/api/v1/*`, `/auth/*`,
 1. Load + validate config (fail fast with clear messages).
 2. Open SQLite, run migrations.
 3. Init OIDC provider (discovery doc fetch; retry with backoff up to 60s).
-4. Start discovery informers for each target namespace; wait for cache sync
+4. Start discovery informers (cluster-wide, or per `discovery.namespaces`
+   entry); wait for cache sync
    (timeout 60s; on timeout start anyway, `/readyz` stays false until synced).
 5. Start HTTP servers. On SIGTERM: stop accepting, cancel running queries,
    wait up to 20s, close pools, close store.
@@ -67,9 +70,11 @@ See `config.example.yaml` for the full annotated example. Validation rules:
 - `server.baseURL` required, must be https unless `server.insecureDev=true`.
 - `oidc.issuer` must match `https://login.microsoftonline.com/<tenant>/v2.0`.
 - Exactly one of `oidc.clientSecret` or `oidc.workloadIdentity.enabled` (M8).
-- `discovery.namespaces` non-empty; no `*` (explicit list only, see ADR-006).
-- Each `authz.rules[]` must have `groups` (non-empty), `level` in {read,write},
-  and at least one of `namespaces/targets/databases` (globs, default `*`).
+- `discovery.namespaces` optional (empty = whole cluster, ADR-024); entries
+  are explicit names, no `*`.
+- Removed settings (`authz.rules`, `authz.annotationAccess`,
+  `discovery.requireAnnotation`, `discovery.generic`) fail with a message
+  naming their replacement.
 - Limits must be positive; `limits.maxRows <= 50000`.
 
 ## 5. Authentication (Entra ID)
@@ -379,7 +384,9 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
 - PVC 1Gi for `/data` (storageClass configurable).
 - Image: distroless static nonroot. `runAsNonRoot`, `readOnlyRootFilesystem`,
   drop ALL caps, `seccompProfile: RuntimeDefault`, `automountServiceAccountToken: true`.
-- ServiceAccount + for each `discovery.namespaces` entry a `Role` + `RoleBinding`:
+- ServiceAccount + a `ClusterRole` + `ClusterRoleBinding` when
+  `discovery.namespaces` is empty (ADR-024), else for each entry a `Role` +
+  `RoleBinding`:
   - `apps`: statefulsets, deployments → get, list, watch
   - core: services → get, list, watch (no pods, ADR-016)
   - core: secrets → **get only** (no list/watch; ADR-005)
@@ -391,12 +398,13 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
 - Service (http 8080, metrics 9090), optional Ingress, optional ServiceMonitor.
 - NetworkPolicy (optional, default on): ingress 8080 from ingress controller
   namespace selector, 9090 from monitoring; egress 5432 (configurable ports) to
-  target namespaces, 443 to apiserver + 0.0.0.0/0 (Entra), 53 DNS.
+  the target namespaces (all namespaces when cluster-wide), 443 to apiserver +
+  0.0.0.0/0 (Entra), 53 DNS.
 - Probes: liveness `/healthz`, readiness `/readyz` (store ok + discovery synced).
 
 ## 15. Testing strategy
 
-- Unit: config validation, authz rule evaluation (table-driven), sqlclass
+- Unit: config validation, access annotation evaluation (table-driven), sqlclass
   (≥80 statements fixture file incl. tricky CTEs), discovery sources against
   fake clientset fixtures (one fixture per pattern in DISCOVERY.md §6), grid
   SQL builder (golden files), CSRF/returnTo validation.
@@ -411,7 +419,8 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
   deployment; assert discovered targets and a query through the API.
 
 ## 16. Open items (to confirm with owner; defaults apply until then)
-- Target namespaces and group → rule mapping for the first deployment.
+- Group names vs IDs in access annotations for the first deployment
+  (Entra group-name claims or `authz.groupAliases`).
 - Whether `write` is ever granted on production targets (default: allowed
   but with mandatory confirmation, §7.3).
 - Design files to be placed under `docs/design/` (until then: the Aegean
