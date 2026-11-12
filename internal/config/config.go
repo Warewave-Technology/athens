@@ -161,7 +161,7 @@ func Default() Config {
 			RedirectPath: "/auth/callback",
 			Scopes:       []string{"openid", "profile", "email"},
 			WorkloadIdentity: WorkloadIdentity{
-				TokenFile: "/var/run/secrets/azure/tokens/azure-identity-token",
+				TokenFile: "/var/run/secrets/azure/tokens/azure-identity-token", // #nosec G101 -- file path
 			},
 		},
 		Auth: Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
@@ -173,7 +173,7 @@ func Default() Config {
 			CNPG:             CNPG{Enabled: true},
 			Zalando: Zalando{
 				Enabled:        true,
-				SecretTemplate: "{username}.{cluster}.credentials.postgresql.acid.zalan.do",
+				SecretTemplate: "{username}.{cluster}.credentials.postgresql.acid.zalan.do", // #nosec G101 -- secret name template, not a credential
 			},
 			Generic: Generic{Enabled: true, ImagePattern: DefaultImagePattern},
 		},
@@ -316,7 +316,7 @@ func (c *Config) Validate() error {
 	} else if u, err := url.Parse(c.Server.BaseURL); err != nil || u.Host == "" {
 		add("server.baseURL must be an absolute URL")
 	} else {
-		if u.Scheme != "https" && !(u.Scheme == "http" && c.Server.InsecureDev) {
+		if u.Scheme != "https" && (u.Scheme != "http" || !c.Server.InsecureDev) {
 			add("server.baseURL must use https (http only with server.insecureDev=true)")
 		}
 		if u.Path != "" && u.Path != "/" {
@@ -335,7 +335,7 @@ func (c *Config) Validate() error {
 	if c.OIDC.Issuer == "" {
 		add("oidc.issuer is required")
 	} else if !entraIssuer.MatchString(c.OIDC.Issuer) {
-		if !(c.OIDC.SkipIssuerTenantCheck && c.Server.InsecureDev) {
+		if !c.OIDC.SkipIssuerTenantCheck || !c.Server.InsecureDev {
 			add("oidc.issuer must be https://login.microsoftonline.com/<tenant-id>/v2.0")
 		}
 	}

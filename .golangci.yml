@@ -28,6 +28,6 @@ linters:
   exclusions:
     rules:
       - path: _test\.go
-        linters: [gosec, errcheck]
+        linters: [gosec, errcheck, bodyclose]
 formatters:
   enable: [gofmt, goimports]

@@ -205,7 +205,7 @@ func (s *SQLite) ListHistory(ctx context.Context, userID string, f HistoryFilter
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []HistoryItem{}
 	for rows.Next() {
 		var h HistoryItem
@@ -229,7 +229,7 @@ func (s *SQLite) ListSavedQueries(ctx context.Context, userID string) ([]SavedQu
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []SavedQuery{}
 	for rows.Next() {
 		q, err := scanSaved(rows)
@@ -375,7 +375,7 @@ func (s *SQLite) ListAudit(ctx context.Context, f AuditFilter) ([]AuditRecord, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []AuditRecord{}
 	for rows.Next() {
 		var r AuditRecord
