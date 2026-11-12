@@ -7,7 +7,7 @@ MVP = M0–M6 (read-only grid). M7 adds grid editing. M8 = hardening extras.
 ---
 
 ## M0 — Repo, build, CI
-- [ ] `go mod init github.com/Warewave-Technology/athens`, Go 1.23, layout from CLAUDE.md
+- [ ] `go mod init github.com/Warewave-Technology/athens`, Go 1.26, layout from CLAUDE.md
 - [ ] `internal/version` (name, version, commit, buildDate via ldflags)
 - [ ] `web/`: Vite + React + TS + pnpm, ESLint, Prettier, TanStack Query, router
 - [ ] `go:embed web/dist`; `--dev` flag proxies non-API paths to Vite (:5173)

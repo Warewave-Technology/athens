@@ -14,7 +14,7 @@ Product name: `athens`. Module `github.com/Warewave-Technology/athens`, image
 - `docs/design/`      — UI design files (visual source of truth for the frontend)
 
 ## Stack (fixed)
-- Go 1.23+, single static binary, `CGO_ENABLED=0`
+- Go 1.26+ (minimum required by client-go, sqlite, pgquery), single static binary, `CGO_ENABLED=0`
 - HTTP: stdlib `net/http` (Go 1.22 routing patterns), no web framework
 - Postgres driver: `github.com/jackc/pgx/v5` (+ `pgxpool`)
 - K8s: `k8s.io/client-go` informers, `dynamic` client for CRDs

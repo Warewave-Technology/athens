@@ -1,0 +1,33 @@
+version: "2"
+run:
+  timeout: 5m
+  build-tags: [integration]
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosec
+    - govet
+    - staticcheck
+    - revive
+    - sqlclosecheck
+    - bodyclose
+    - ineffassign
+    - unused
+    - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    gosec:
+      excludes:
+        - G104 # covered by errcheck
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck]
+formatters:
+  enable: [gofmt, goimports]
