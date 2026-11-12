@@ -238,7 +238,17 @@ The list (schema-qualified or not, case-insensitive): `pg_terminate_backend`,
 
 ### 7.3 Enforcement
 - level `read`: class must be `read` (EXPLAIN ANALYZE of SELECT allowed). Else
-  403 `forbidden_statement`. Still executed in READ ONLY tx.
+  403 `forbidden_statement`. Still executed in READ ONLY tx. On a privileged
+  RW login (superuser, REPLICATION, BYPASSRLS) without an RO login, editor
+  SQL from read users is refused with 403 `read_login_required` (ADR-027).
+- Functions that run SQL given as text (`query_to_xml` family, `ts_stat`,
+  `ts_rewrite`), server file, replication slot and large-object functions are
+  side-effect functions; plain EXPLAIN is walked for functions and credential
+  catalogs (planning evaluates stable functions); NUL bytes are rejected.
+- level `write`: statements classified `read` run in a READ ONLY tx; if one
+  fails with 25006 (it writes through a function) the response is 409
+  `confirmation_required` and the confirmed re-run is writable. MERGE and
+  `WHERE ... OR <constant true>` are destructive.
 - level `write`: any class except `session`. If `destructive` and request lacks
   `confirm: true` → 409 `confirmation_required` with `{class, destructive,
   summary}`; the UI shows a confirm dialog with the statement summary and

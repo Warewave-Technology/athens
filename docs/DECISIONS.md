@@ -262,8 +262,66 @@ role is usable (PostgreSQL 13, a non-member login), athens keeps READ ONLY
 transactions and warns admins instead of refusing service. `SET LOCAL` ends
 with the transaction, `RESET ROLE`/`SET ROLE`/`set_config('role')` are
 already rejected by sqlclass, and editor sessions are `DISCARD ALL`-ed.
+*Amended by ADR-027:* functions that run SQL as text could reset the role,
+so on privileged logins the role switch is not treated as a boundary.
 `pg_read_all_data` can still read `pg_authid`, so independently of the role
 the credential catalogs (`pg_authid`, `pg_shadow`, `pg_user_mapping(s)`) are
 refused for everyone in the editor (classified as session statements) and
 the grid (404). Writers never switch roles. A dedicated read-only login
 (`readonly-secret`) stays the strongest option.
+
+## ADR-027 Security review before 0.1.3
+An internal review (scanners plus two independent code reviews, every
+finding confirmed against Postgres 16 and 13) found, and this release fixes:
+- **Dynamic SQL escaped the classifier (critical).** `query_to_xml`,
+  `table_to_xml`, `schema_to_xml`, `database_to_xml`, `cursor_to_xml`,
+  `ts_stat`, `ts_rewrite` run SQL given as a string, so a read user could
+  call anything, including `set_config('role', 'none')` to leave
+  `pg_read_all_data`. → They are side-effect functions now, together with
+  server file (`pg_read_file`, `pg_ls_*`, `pg_stat_file`), replication slot
+  (`pg_replication_slot_advance`, `pg_copy_*`, `pg_logical_slot_*`), backup
+  and large-object write functions (LO writes pass READ ONLY before PG14).
+  Plain EXPLAIN is walked for functions and credential catalogs, because
+  planning evaluates stable functions. NUL bytes are rejected.
+- **No role boundary on privileged logins.** Any user-defined function with
+  dynamic SQL can still `set_config('role', ...)` back to the login.
+  Superuser, REPLICATION and BYPASSRLS logins therefore never serve read
+  users' SQL editor without an RO login (403 `read_login_required`, admin
+  warning); athens-generated SQL (grid, structure, catalog) keeps working
+  under the role switch. Non-privileged logins keep ADR-026's warn-only
+  fallback.
+- **Writers' function side effects skipped confirmation.** Statements a
+  writer runs that classify as read execute READ ONLY; a 25006 turns into a
+  409 confirmation and the confirmed re-run is writable. MERGE and
+  `WHERE ... OR true` are destructive.
+- **More credential catalogs:** `pg_subscription` (connection strings with
+  passwords), `information_schema._pg_user_mappings`, `user_mapping_options`,
+  `_pg_foreign_servers`.
+- **HTTP:** unknown methods are refused with 405 before routing (a raw
+  method label created unbounded metric series, an unauthenticated OOM);
+  read/header timeouts and a 64 KiB header limit; `--dev` needs insecureDev.
+- **Audit:** every field is length-bounded; the export streams in pages and
+  defuses formulas in every CSV cell; callbacks without sign-in state are
+  counted, not audited (anonymous flooding).
+- **Per-user storage caps:** 500 saved queries, 300 drafts (only for
+  visible targets), 100 UI state entries; saved-query targets must be
+  visible; database/schema/relation names over 63 bytes are 404.
+- **Pools:** a missing explicit database returns 404 and drops its pool
+  without marking the target unreachable; at most 32 pools per target (LRU).
+- **Cookies:** `__Host-athens_session`, `__Host-athens_csrf` and
+  `__Secure-athens_auth` (plain names only with insecureDev), so sibling
+  subdomains cannot plant them; a new sign-in deletes the browser's previous
+  session. Existing sessions end with the upgrade.
+- **CSV downloads** in the UI defuse spreadsheet formulas (numbers stay).
+- **Supply chain:** GitHub Actions pinned by commit SHA, tools pinned,
+  govulncheck and pnpm audit in CI, Dependabot; Go toolchain 1.26.11,
+  klauspost/compress 1.20.4, x/crypto 0.59.0; distroless debian13 base
+  (debian12 carried outdated ca-certificates and tzdata); dev-only
+  minimatch override.
+
+Accepted (documented in `.trivyignore`): cluster-wide `get` on Secrets when
+the whole cluster is watched (owner's decision, ADR-024; list namespaces to
+scope it), the same per namespace in namespaced mode, the ghcr.io registry
+warning and the Dockerfile HEALTHCHECK rule (Kubernetes probes are used).
+Info: the audit identity shown is the `email` claim; filtering by user ID
+is exact.

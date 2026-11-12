@@ -108,6 +108,10 @@ spreadsheets do not evaluate them.
 
 ## Upgrades
 
+Upgrading to 0.1.3 or later ends existing sessions once: the session
+cookies were renamed to `__Host-athens_session` / `__Host-athens_csrf`
+(ADR-027), so everyone signs in again.
+
 `helm upgrade` replaces the pod (Recreate); expect a few seconds of downtime.
 Schema migrations of the SQLite store run automatically at start and are
 forward-only; back up the PVC before major upgrades. Sessions survive

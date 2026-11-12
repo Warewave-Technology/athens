@@ -181,9 +181,19 @@ Write access is not unlimited. For every SQL editor statement:
   `lock_timeout` (5 s), and with `application_name` set to
   `athens:<user email>`, so DBAs can see who runs what in
   `pg_stat_activity`.
-- **Read users** may only run reads. Functions with side effects
-  (`pg_terminate_backend`, `set_config`, `nextval`, `dblink`, ...) count as
-  writes, and the `READ ONLY` transaction stops anything that slips through.
+- **Read users** may only run reads:
+  - functions with side effects count as writes: `pg_terminate_backend`,
+    `set_config`, `nextval`, `dblink`, server file and replication slot
+    functions, large-object writes, and every function that runs SQL given
+    as text (`query_to_xml`, `table_to_xml`, `ts_stat`, ...);
+  - `EXPLAIN` is checked the same way, because planning runs functions;
+  - the `READ ONLY` transaction stops anything that slips through;
+  - on a superuser main login without a read-only login, read users get no
+    SQL editor at all (see [DATABASES.md](DATABASES.md#read-only-access-inside-postgresql)).
+- **Writers' SELECTs run READ ONLY too.** If one writes through a function,
+  athens asks for confirmation and runs it again in a writable transaction.
+- **MERGE** and `DELETE`/`UPDATE` with `WHERE ... OR true` count as
+  destructive.
 
 Grid edits are guarded too:
 - Rows are matched by primary key, and the original value of every edited

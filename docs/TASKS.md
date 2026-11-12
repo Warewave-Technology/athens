@@ -12,7 +12,7 @@ MVP = M0–M6 (read-only grid). M7 adds grid editing. M8 = hardening extras.
 - [x] `web/`: Vite + React + TS + pnpm, ESLint, Prettier, TanStack Query, router
 - [x] `go:embed web/dist`; `--dev` flag proxies non-API paths to Vite (:5173)
 - [x] Makefile targets from CLAUDE.md
-- [x] Dockerfile: node build stage → go build stage (`CGO_ENABLED=0`, `-trimpath`) → `gcr.io/distroless/static-debian12:nonroot`
+- [x] Dockerfile: node build stage → go build stage (`CGO_ENABLED=0`, `-trimpath`) → `gcr.io/distroless/static-debian13:nonroot`
 - [x] GitHub Actions: lint, unit tests, integration tests (service docker), build image, trivy scan
 - [x] golangci-lint config (errcheck, gosec, govet, staticcheck, revive, sqlclosecheck, bodyclose)
 
