@@ -417,4 +417,3 @@ func walk(m protoreflect.Message, fn func(protoreflect.Message)) {
 		return true
 	})
 }
-
