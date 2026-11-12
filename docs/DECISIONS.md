@@ -143,6 +143,11 @@ darker `--accent-fill` / `--danger-fill` so white labels pass WCAG AA, and
 body/secondary/tertiary text measure 14.2 / 7.2 / 4.7:1 on the surface. Theme
 tokens carry no colour transitions: Safari kept stale colours on transitioned
 elements after a theme switch.
+Icon (`docs/assets/athens-icon.svg`, also the favicon and the sidebar/sign-in
+mark): a column whose shaft is three stacked database drums (Greek columns
+were built from stone drums) with laurel-gold capital and base on an Aegean
+blue tile. It replaces the generic lucide "landmark" glyph and the leftover
+Gruvbox favicon.
 
 ## ADR-020 Discovery is opt-in (annotation-only) by default
 Automatic discovery showed every postgres-looking workload in the listed

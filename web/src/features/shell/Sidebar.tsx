@@ -1,6 +1,4 @@
-import { Landmark } from "lucide-react";
 import type { Me } from "../../api/types";
-import { Icon } from "../../components/Icon";
 import { UserMenu } from "../../components/UserMenu";
 import type { ThemePref } from "../../theme";
 import { SchemaTree } from "../schema/SchemaTree";
@@ -9,9 +7,7 @@ import { ConnectionCard } from "./ConnectionCard";
 export function Brand() {
   return (
     <a className="brand" href="/">
-      <span className="brand-mark">
-        <Icon as={Landmark} size={15} />
-      </span>
+      <img className="brand-mark" src="/favicon.svg" alt="" />
       athens
     </a>
   );

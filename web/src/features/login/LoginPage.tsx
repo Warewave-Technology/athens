@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Landmark } from "lucide-react";
-import { Icon } from "../../components/Icon";
 import { useTheme } from "../../theme";
 
 export const SIGNED_OUT_KEY = "athens.signedOut";
@@ -37,9 +35,7 @@ export function LoginPage() {
     <main className="login">
       <section className="login-card" aria-labelledby="login-title">
         <div className="login-brand">
-          <span className="brand-mark login-mark">
-            <Icon as={Landmark} size={22} />
-          </span>
+          <img className="brand-mark login-mark" src="/favicon.svg" alt="" />
           <span>athens</span>
         </div>
         <h1 id="login-title">Sign in</h1>

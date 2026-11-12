@@ -1,4 +1,13 @@
-# athens
+<p align="center">
+  <img src="docs/assets/athens-icon.svg" alt="" width="96" height="96">
+</p>
+
+<h1 align="center">athens</h1>
+
+<p align="center">
+  PostgreSQL web client for Kubernetes, with Microsoft Entra ID sign-in,<br>
+  database discovery by annotation and a full audit log.
+</p>
 
 athens is a PostgreSQL web client that runs inside your Kubernetes cluster.
 Users sign in with Microsoft Entra ID and see the databases their groups may

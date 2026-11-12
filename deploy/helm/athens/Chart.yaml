@@ -6,3 +6,8 @@ version: 0.1.0
 appVersion: "0.1.0"
 home: https://github.com/Warewave-Technology/athens
 sources: ["https://github.com/Warewave-Technology/athens"]
+icon: https://raw.githubusercontent.com/Warewave-Technology/athens/main/docs/assets/athens-icon.png
+keywords: [postgresql, postgres, database, sql-client, kubernetes, entra-id, cloudnativepg, zalando]
+maintainers:
+  - name: Warewave Technology
+    url: https://github.com/Warewave-Technology
