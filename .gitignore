@@ -1,0 +1,11 @@
+/bin/
+/dist/
+*.db
+*.db-shm
+*.db-wal
+coverage.out
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+.DS_Store
+/hack/kind/.kube/
