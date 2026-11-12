@@ -223,7 +223,9 @@ func classify(n *pg.Node, r *Result) {
 	}
 
 	// Anything that modifies data anywhere in the tree (data-modifying CTEs,
-	// sub-statements) or calls a side-effect function makes a read a write.
+	// sub-statements) or calls a side-effect function makes a read a write;
+	// reading a credentials catalog is refused outright.
+	credentials := ""
 	walk(n.ProtoReflect(), func(m protoreflect.Message) {
 		switch x := m.Interface().(type) {
 		case *pg.InsertStmt, *pg.MergeStmt:
@@ -246,8 +248,26 @@ func classify(n *pg.Node, r *Result) {
 			if name := funcName(x); sideEffect(name) {
 				promote(r, "calls side-effect function "+name+"()")
 			}
+		case *pg.RangeVar:
+			if SensitiveRelation(x.Schemaname, x.Relname) {
+				credentials = x.Relname
+			}
 		}
 	})
+	if credentials != "" {
+		r.Class, r.Cursorable = Session, false
+		r.Reason = "reading " + credentials + " is not allowed: it holds credentials (ADR-026)"
+	}
+}
+
+// sensitiveRelations are the catalogs that hold password hashes or user
+// mapping secrets. A superuser login, and pg_read_all_data, can read them,
+// so athens refuses them for everyone (editor and grid, ADR-026).
+var sensitiveRelations = map[string]bool{"pg_authid": true, "pg_shadow": true, "pg_user_mapping": true, "pg_user_mappings": true}
+
+// SensitiveRelation reports whether schema.name is a credentials catalog.
+func SensitiveRelation(schema, name string) bool {
+	return (schema == "" || schema == "pg_catalog") && sensitiveRelations[strings.ToLower(name)]
 }
 
 func promote(r *Result, reason string) {

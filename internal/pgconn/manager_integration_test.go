@@ -129,7 +129,8 @@ func TestROCredentialUsedAndFallback(t *testing.T) {
 		defer m2.CloseAll()
 		var u string
 		if err := m2.Run(context.Background(), pgtest.Req(bad, "app", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, "SELECT current_user").Scan(&u)
+			// session_user is the login; current_user may be the read-only role (ADR-026)
+			return tx.QueryRow(ctx, "SELECT session_user").Scan(&u)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -389,5 +390,86 @@ func TestMissingDefaultDatabase(t *testing.T) {
 	m.TargetChanged(discovery.Event{Type: discovery.Updated, Target: tg})
 	if _, using := m.DefaultDBFallback(tg.ID); using != "" {
 		t.Fatalf("fallback kept after target change: %q", using)
+	}
+}
+
+// TestReadRoleWithoutROLogin: read users on the RW (superuser) login switch
+// to pg_read_all_data on PostgreSQL 14+, or to the annotated readonly-role;
+// without a usable role they stay on the RW login in READ ONLY mode (ADR-026).
+func TestReadRoleWithoutROLogin(t *testing.T) {
+	q := func(m *athenspg.Manager, tg discovery.Target, level authz.Level, sql string) (string, error) {
+		var out string
+		err := m.Run(context.Background(), pgtest.Req(tg, "app", level), func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, sql).Scan(&out)
+		})
+		return out, err
+	}
+	pg16 := instances[0]
+	tg, client := pg16.Target("norologin")
+	tg.RO = nil
+	m := pg16.Manager(tg, client, pgtest.Limits())
+	defer m.CloseAll()
+
+	if u, err := q(m, tg, authz.Read, "SELECT current_user"); err != nil || u != "pg_read_all_data" {
+		t.Fatalf("read user = %q %v", u, err)
+	}
+	if role, checked := m.ReadRole(tg.ID); role != "pg_read_all_data" || !checked {
+		t.Fatalf("ReadRole = %q %v", role, checked)
+	}
+	if _, err := q(m, tg, authz.Read, "SELECT count(*)::text FROM pg_class"); err != nil {
+		t.Fatalf("catalog read: %v", err)
+	}
+	// superuser-only functions are gone with the role switch (pg_authid stays
+	// readable for pg_read_all_data; sqlclass refuses it, see sqlclass tests)
+	for _, sql := range []string{"SELECT pg_read_file('PG_VERSION')", "SELECT pg_ls_dir('.')::text"} {
+		if _, err := q(m, tg, authz.Read, sql); err == nil {
+			t.Errorf("%s must be denied for read users", sql)
+		}
+	}
+	if u, err := q(m, tg, authz.Write, "SELECT current_user"); err != nil || u != "postgres" {
+		t.Fatalf("write user = %q %v", u, err)
+	}
+
+	// an annotated NOLOGIN role the RW login may switch to
+	if err := m.Run(context.Background(), pgtest.Req(tg, "app", authz.Write), func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `CREATE ROLE athens_reader NOLOGIN; GRANT pg_read_all_data TO athens_reader`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	custom := tg
+	custom.ReadOnlyRole = "athens_reader"
+	m2 := pg16.Manager(custom, client, pgtest.Limits())
+	defer m2.CloseAll()
+	if u, err := q(m2, custom, authz.Read, "SELECT current_user"); err != nil || u != "athens_reader" {
+		t.Fatalf("custom role user = %q %v", u, err)
+	}
+
+	// a role that does not exist: no switch, READ ONLY still holds, admins are told
+	missing := tg
+	missing.ReadOnlyRole = "no_such_role"
+	m3 := pg16.Manager(missing, client, pgtest.Limits())
+	defer m3.CloseAll()
+	if u, err := q(m3, missing, authz.Read, "SELECT current_user"); err != nil || u != "postgres" {
+		t.Fatalf("missing role user = %q %v", u, err)
+	}
+	if role, checked := m3.ReadRole(missing.ID); role != "" || !checked {
+		t.Fatalf("ReadRole = %q %v", role, checked)
+	}
+	if _, err := q(m3, missing, authz.Read, "UPDATE shop.customers SET name = name RETURNING 'x'"); err == nil {
+		t.Fatal("READ ONLY must still apply without a role")
+	}
+
+	// PostgreSQL 13 has no pg_read_all_data
+	pg13 := instances[1]
+	tg13, client13 := pg13.Target("norologin13")
+	tg13.RO = nil
+	m4 := pg13.Manager(tg13, client13, pgtest.Limits())
+	defer m4.CloseAll()
+	if u, err := q(m4, tg13, authz.Read, "SELECT current_user"); err != nil || u != "postgres" {
+		t.Fatalf("pg13 read user = %q %v", u, err)
+	}
+	if role, checked := m4.ReadRole(tg13.ID); role != "" || !checked {
+		t.Fatalf("pg13 ReadRole = %q %v", role, checked)
 	}
 }

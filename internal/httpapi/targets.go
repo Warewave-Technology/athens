@@ -122,6 +122,14 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 			if s.Pools.ROFallback(t.ID) {
 				j.Warnings = append(j.Warnings, "read-only credential was rejected; using rw credential with READ ONLY transactions")
 			}
+			if role, checked := s.Pools.ReadRole(t.ID); checked && role == "" {
+				want := t.ReadOnlyRole
+				if want == "" {
+					want = "pg_read_all_data"
+				}
+				j.Warnings = append(j.Warnings, fmt.Sprintf("read users run on the main login in READ ONLY transactions: no read-only login, and role %q "+
+					"does not exist or the login cannot switch to it (add athens.warewave.io/readonly-secret or readonly-role)", want))
+			}
 			if missing, using := s.Pools.DefaultDBFallback(t.ID); using != "" {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("database %q does not exist; connecting to %q instead (set the athens.warewave.io/database annotation)", missing, using))
 			}

@@ -85,6 +85,9 @@ type Target struct {
 	Warnings      []string          `json:"warnings,omitempty"`
 	// ReadOnly caps every user at read access (<prefix>/readonly, ADR-022).
 	ReadOnly bool `json:"readOnly,omitempty"`
+	// ReadOnlyRole is the role read users switch to (SET LOCAL ROLE) when
+	// they run on the RW login; empty means pg_read_all_data (ADR-026).
+	ReadOnlyRole string `json:"readOnlyRole,omitempty"`
 	// Access, when set, replaces the config rules for this target
 	// (<prefix>/access, ADR-022). An empty policy grants nobody.
 	Access *AccessPolicy `json:"access,omitempty"`

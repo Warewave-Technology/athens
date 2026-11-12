@@ -247,3 +247,23 @@ danger, Gruvbox syntax colours in the editor. Solid light-mode buttons use a
 darker aqua (`#376a4b`) so cream labels pass WCAG AA (5.6:1); dark mode puts
 `#282828` text on `#8ec07c` (7:1). Layout, components, IBM Plex fonts and the
 brand logo are unchanged. Supersedes the palette part of ADR-019.
+
+## ADR-026 Read-only role without a read-only login
+Many databases have no read-only login, and env-discovered ones usually run
+on the `postgres` superuser. READ ONLY transactions plus statement
+classification stop writes, but read users still carried the superuser's
+read privileges: server files (`pg_read_file`, `pg_ls_dir`), other
+sessions' queries, role password hashes. → When a read user runs on the RW
+login, every transaction does `SET LOCAL ROLE` to the `readonly-role`
+annotation or, by default, `pg_read_all_data` (PostgreSQL 14+). The first
+transaction per target checks, inside a savepoint, that the role exists and
+the login is a member; the result is cached until the target changes. If no
+role is usable (PostgreSQL 13, a non-member login), athens keeps READ ONLY
+transactions and warns admins instead of refusing service. `SET LOCAL` ends
+with the transaction, `RESET ROLE`/`SET ROLE`/`set_config('role')` are
+already rejected by sqlclass, and editor sessions are `DISCARD ALL`-ed.
+`pg_read_all_data` can still read `pg_authid`, so independently of the role
+the credential catalogs (`pg_authid`, `pg_shadow`, `pg_user_mapping(s)`) are
+refused for everyone in the editor (classified as session statements) and
+the grid (404). Writers never switch roles. A dedicated read-only login
+(`readonly-secret`) stays the strongest option.

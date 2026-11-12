@@ -35,7 +35,7 @@ func TestDocsExamples(t *testing.T) {
 			return x.Host == "crm-flexible.demo.svc" && x.SSLMode == "verify-ca" && x.CA != nil && x.CA.Name == "azure-postgres-ca" && x.DefaultDB == "crm"
 		}, "ExternalName service"},
 		{"access-annotations.yaml", func(x Target) bool {
-			return x.ReadOnly && x.Access != nil && len(x.Access.Grants) == 2 && x.Access.Grants[0].Group == "system-admins"
+			return x.ReadOnly && x.ReadOnlyRole == "athens_reader" && x.Access != nil && len(x.Access.Grants) == 2 && x.Access.Grants[0].Group == "system-admins"
 		}, "readonly + access"},
 	}
 	for _, tc := range cases {

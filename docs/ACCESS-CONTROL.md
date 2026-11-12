@@ -53,7 +53,7 @@ the `groups` claim of the ID token at sign-in and keeps them in the session.
 | Level | The user can |
 |---|---|
 | none | not see the database at all (the API answers 404, not 403, so names don't leak) |
-| `ro` / read | browse schemas, structure and rows, download CSV, run read-only SQL. Every query runs in a `READ ONLY` transaction, with the database's read-only login when one is annotated. |
+| `ro` / read | browse schemas, structure and rows, download CSV, run read-only SQL. Every query runs in a `READ ONLY` transaction, with the database's read-only login when one is annotated, otherwise switched to a read-only role (`pg_read_all_data` or `readonly-role`; see [DATABASES.md](DATABASES.md#read-only-access-inside-postgresql)). |
 | `rw` / write | everything above, plus edit, insert and delete rows in the grid and run DML/DDL in the SQL editor, with confirmations (see [Guardrails](#guardrails-for-writers)) |
 
 ## The access annotation

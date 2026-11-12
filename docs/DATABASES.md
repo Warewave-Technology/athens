@@ -16,7 +16,7 @@ in [`examples/`](examples/) is checked by a test
   - [CloudNativePG](#cloudnativepg)
   - [Zalando postgres-operator](#zalando-postgres-operator)
   - [Database outside the cluster](#database-outside-the-cluster)
-- [A read-only login for read users](#a-read-only-login-for-read-users)
+- [Read-only access inside PostgreSQL](#read-only-access-inside-postgresql)
 - [Who may use a database](#who-may-use-a-database)
 - [Annotation reference](#annotation-reference)
 - [Checking the result](#checking-the-result)
@@ -131,7 +131,7 @@ metadata:
   schema change on this database then needs a confirmation where the user
   types the database name, not only destructive statements.
 - `readonly-secret` is the login athens uses for users with read access; see
-  [A read-only login](#a-read-only-login-for-read-users).
+  [Read-only access inside PostgreSQL](#read-only-access-inside-postgresql).
 
 ### Bitnami Helm chart
 
@@ -267,12 +267,53 @@ networkPolicy:
       ports: [{protocol: TCP, port: 5432}]
 ```
 
-## A read-only login for read users
+## Read-only access inside PostgreSQL
 
 Users with read access always run in `READ ONLY` transactions, and the SQL
-editor rejects anything but reads for them. A dedicated read-only login adds
-a second barrier inside PostgreSQL itself. Create one and point
-`readonly-secret` at it:
+editor rejects anything but reads for them. On top of that, athens limits
+what their queries can do inside PostgreSQL itself, in this order:
+
+1. **A read-only login** (`readonly-secret`), if the database has one: read
+   users connect with it.
+2. **Otherwise, a read-only role on the main login:** each read transaction
+   starts with `SET LOCAL ROLE <role>`.
+   - The role is the one in `athens.warewave.io/readonly-role`, or
+     `pg_read_all_data` (built into PostgreSQL 14+) when none is set.
+   - Nobody has to create a login or a Secret for this. It works when the
+     main login is a superuser (common for env-discovered databases) or a
+     member of the role.
+   - Under the role, superuser-only functions such as `pg_read_file`,
+     `pg_ls_dir` and `COPY ... PROGRAM` are unavailable.
+3. **If neither is usable** (PostgreSQL 13, or a login that may not switch
+   roles), read users stay on the main login in `READ ONLY` transactions,
+   and admins see the warning "read users run on the main login".
+
+Independent of the login or role, athens never shows the catalogs that hold
+credentials (`pg_authid`, `pg_shadow`, `pg_user_mapping`), neither in the
+SQL editor nor in the grid. A superuser login, and `pg_read_all_data`, could
+read their password hashes otherwise.
+
+### Without a read-only login
+
+Nothing to do on PostgreSQL 14+ with a superuser main login: athens uses
+`pg_read_all_data`. To pick another role, for example on PostgreSQL 13 or to
+read fewer tables, create a role without login once and name it:
+
+```sql
+CREATE ROLE athens_reader NOLOGIN;
+GRANT USAGE ON SCHEMA public TO athens_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO athens_reader;
+GRANT athens_reader TO billing_owner;   -- only if the main login is not a superuser
+```
+
+```bash
+kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-role=athens_reader
+```
+
+### With a read-only login
+
+A dedicated login is the strongest option: PostgreSQL itself sees a
+different user. Create one and point `readonly-secret` at it:
 
 ```sql
 -- PostgreSQL 14+
@@ -298,8 +339,8 @@ kubectl -n billing create secret generic billing-db-ro \
 kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-secret=billing-db-ro
 ```
 
-If the read-only login is rejected, athens falls back to the main login with
-`READ ONLY` transactions and shows a warning to admins (Admin → Discovery).
+If the read-only login is rejected, athens falls back to the main login (and
+the read-only role above) and shows a warning to admins.
 
 ## Who may use a database
 
@@ -355,6 +396,7 @@ Service, CNPG `Cluster` or Zalando `postgresql`.
 | `user-key` / `password-key` | `username` / `password` | key names in `secret` |
 | `user` | from `secret` | fixed user name (Zalando: which user's Secret to use) |
 | `readonly-secret` | — | Secret with a read-only login for read users |
+| `readonly-role` | `pg_read_all_data` (PostgreSQL 14+) | role read users switch to when there is no read-only login |
 | `readonly-user-key` / `readonly-password-key` | `username` / `password` | key names in `readonly-secret` |
 | `database` | `POSTGRES_DB` and similar env, else the user name; `postgres` if that does not exist | database opened first (only used to list the databases) |
 | `service` | matched by selector | Service to connect through (on a workload) |
@@ -404,6 +446,7 @@ sidebar.
 | invalid ... annotation ignored | an annotation value was not understood |
 | access entry ... ignored | see [Who may use a database](#who-may-use-a-database) |
 | read-only credential was rejected | the `readonly-secret` login failed; athens uses the main login with READ ONLY transactions |
+| read users run on the main login in READ ONLY transactions | no read-only login, and the read-only role does not exist or the main login cannot switch to it; add `readonly-secret` or `readonly-role` |
 | database "..." does not exist; connecting to "postgres" instead | athens guessed the first database from the env or the user name and it doesn't exist; set `athens.warewave.io/database` to a database that does |
 
 The database does not appear at all:

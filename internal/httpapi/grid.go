@@ -17,6 +17,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
 	"github.com/Warewave-Technology/athens/internal/rows"
+	"github.com/Warewave-Technology/athens/internal/sqlclass"
 	"github.com/Warewave-Technology/athens/internal/store"
 )
 
@@ -65,7 +66,16 @@ type gridResponse struct {
 	DurationMs     int64        `json:"durationMs"`
 }
 
+// credentialsCatalog reports a grid request on pg_authid and the other
+// catalogs athens never shows (ADR-026).
+func credentialsCatalog(r *http.Request) bool {
+	return sqlclass.SensitiveRelation(r.PathValue("schema"), r.PathValue("rel"))
+}
+
 func (s *Server) rowsQuery(w http.ResponseWriter, r *http.Request) error {
+	if credentialsCatalog(r) {
+		return httpx.ErrNotFound
+	}
 	t, db, lvl, err := s.targetDB(r)
 	if err != nil {
 		return err
@@ -270,6 +280,9 @@ func decodePK(s string) (map[string]*string, error) {
 }
 
 func (s *Server) rowsCell(w http.ResponseWriter, r *http.Request) error {
+	if credentialsCatalog(r) {
+		return httpx.ErrNotFound
+	}
 	t, db, lvl, err := s.targetDB(r)
 	if err != nil {
 		return err

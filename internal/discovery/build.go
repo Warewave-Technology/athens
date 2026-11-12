@@ -409,6 +409,9 @@ func (b *builder) applyCommonAnnotations(t *Target, m metav1.ObjectMeta) {
 	if ca, ok := b.ann(m, "ca-secret"); ok && ca != "" {
 		t.CA = &KeyRef{Name: ca, Key: b.annOr(m, "ca-key", "ca.crt")}
 	}
+	if role, ok := b.ann(m, "readonly-role"); ok && role != "" {
+		t.ReadOnlyRole = role
+	}
 	if ro, ok := b.ann(m, "readonly-secret"); ok && ro != "" {
 		t.RO = &CredentialRef{
 			User:     ValueSource{Secret: &KeyRef{Name: ro, Key: b.annOr(m, "readonly-user-key", "username")}},

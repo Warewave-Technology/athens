@@ -238,3 +238,19 @@ func TestGridPerformanceMillionRows(t *testing.T) {
 		t.Fatalf("p95 %s > 300ms", p95)
 	}
 }
+
+// TestGridCredentialCatalogs: pg_authid and friends are never read or
+// written through the grid, not even by writers on a superuser login.
+func TestGridCredentialCatalogs(t *testing.T) {
+	h, _ := dbHarness(t, instances[0], nil)
+	w := h.login("w@example.com", "writers")
+	if _, r := gridQuery(t, w, "pg_catalog/pg_authid", map[string]any{"limit": 5}); r.status != 404 {
+		t.Fatalf("grid read of pg_authid: %d %s", r.status, r.body)
+	}
+	if r := w.do(http.MethodPatch, dbPath+"/relations/pg_catalog/pg_shadow/rows", map[string]any{"pk": map[string]any{"usesysid": "10"}, "set": map[string]any{"passwd": "x"}}); r.status != 404 {
+		t.Fatalf("grid write to pg_shadow: %d", r.status)
+	}
+	if r := run(w, "select rolpassword from pg_authid", nil); r.status != 400 || r.errCode() != "unsupported_statement" {
+		t.Fatalf("editor read of pg_authid: %d %s", r.status, r.body)
+	}
+}

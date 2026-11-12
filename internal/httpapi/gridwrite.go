@@ -39,6 +39,9 @@ type writeCtx struct {
 
 // writable checks level, environment confirmation and table editability.
 func (s *Server) writable(r *http.Request, confirm bool) (*writeCtx, error) {
+	if credentialsCatalog(r) {
+		return nil, httpx.ErrNotFound
+	}
 	t, db, lvl, err := s.targetDB(r)
 	if err != nil {
 		return nil, err

@@ -135,6 +135,7 @@ On a StatefulSet, Deployment or Service:
 | `user` | no | fixed user if secret has no user key |
 | `readonly-secret` | no | (enables RO credential) |
 | `readonly-user-key` / `readonly-password-key` | no | `username` / `password` |
+| `readonly-role` | no | role read users switch to without RO login; default `pg_read_all_data` (§5) |
 | `database` | no | env, else user name; `postgres` if that does not exist |
 | `display-name` | no | name |
 | `environment` | no | `""` |
@@ -227,10 +228,19 @@ Among Services in the namespace:
 Host uses `discovery.clusterDomain` (default `cluster.local`) only when
 `discovery.useFQDN` is true; default short form `<svc>.<ns>.svc`.
 
-## 5. Read-only credentials
+## 5. Read-only credentials and role
 `RO` is set when an annotation (`readonly-secret`) exists on the workload/CR/
 Service. Pool manager uses RO for users whose effective level is `read`.
 If RO auth fails, fall back to RW + READ ONLY tx and add a target warning.
+
+Read users on the RW login (no RO, or RO rejected) switch roles in every
+transaction with `SET LOCAL ROLE <role>` (ADR-026). `<role>` is the
+`readonly-role` annotation (`Target.ReadOnlyRole`), else `pg_read_all_data`.
+The first such transaction per target checks inside a savepoint that the
+role exists and `pg_has_role(current_user, role, 'MEMBER')`; the result is
+cached until the target changes (or the role switch later fails). Without a
+usable role the transaction stays on the RW login (READ ONLY) and admins get
+a target warning. Writers never switch roles.
 
 ## 6. Test fixtures (fake clientset), one file each in `internal/discovery/testdata/`
 Every workload and operator resource in the fixtures is annotated

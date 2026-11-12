@@ -78,3 +78,28 @@ func TestSummaryAndStatement(t *testing.T) {
 		t.Fatal("SHOW is not cursorable")
 	}
 }
+
+func TestCredentialCatalogsRefused(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT rolname, rolpassword FROM pg_authid",
+		"select * from PG_CATALOG.PG_SHADOW",
+		"TABLE pg_authid",
+		"SELECT count(*) FROM pg_user_mappings",
+		"WITH x AS (SELECT * FROM pg_catalog.pg_authid) SELECT 1 FROM x",
+		"EXPLAIN ANALYZE SELECT * FROM pg_authid",
+	} {
+		r, err := Classify(sql)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if r.Class != Session || r.Reason == "" {
+			t.Errorf("%s: class %s, want session (refused)", sql, r.Class)
+		}
+	}
+	// EXPLAIN without ANALYZE returns only the plan, no rows
+	for _, sql := range []string{"SELECT rolname FROM pg_roles", "SELECT * FROM myapp.pg_authid", "EXPLAIN SELECT * FROM pg_authid"} {
+		if r, _ := Classify(sql); r.Class != Read {
+			t.Errorf("%s: class %s, want read", sql, r.Class)
+		}
+	}
+}

@@ -94,7 +94,11 @@ type targetState struct {
 	// missingDB / fallbackDB: the guessed initial database does not exist and
 	// the default-database pool uses fallbackDB instead.
 	missingDB, fallbackDB string
-	running               map[*runHandle]struct{}
+	// readRole: the role read users on the RW login switch to; checked once
+	// per target (ADR-026). "" after the check means no usable role.
+	readRole        string
+	readRoleChecked bool
+	running         map[*runHandle]struct{}
 }
 
 type runHandle struct{ cancel context.CancelFunc }
@@ -189,7 +193,9 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		}
 		return err
 	}
-	err = m.runOn(ctx, conn, req, fn)
+	// Read users on the RW login drop to a read-only role (ADR-026).
+	dropRole := req.Level == authz.Read && key.Kind == RW
+	err = m.runOn(ctx, conn, req, dropRole, fn)
 	if errors.Is(err, errStaleConn) {
 		// The pooled connections died underneath us (server or network
 		// restart). Nothing reached the server, so drop the pool's idle
@@ -199,7 +205,7 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		if conn, err = m.acquire(ctx, req.Target, key); err != nil {
 			return err
 		}
-		err = m.runOn(ctx, conn, req, fn)
+		err = m.runOn(ctx, conn, req, dropRole, fn)
 	}
 	if errors.Is(err, errStaleConn) {
 		return &ErrUnavailable{Cause: err}
@@ -232,7 +238,7 @@ func (m *Manager) resetPool(key Key) {
 
 func (m *Manager) log() *slog.Logger { return m.opt.Log }
 
-func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, fn func(context.Context, pgx.Tx) error) (err error) {
+func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dropRole bool, fn func(context.Context, pgx.Tx) error) (err error) {
 	defer func() {
 		if req.Reset {
 			// User SQL may have changed session state; never hand it to the
@@ -274,6 +280,11 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, fn
 		AppName(req.Email), ms(l.StatementTimeout.D()), ms(l.LockTimeout.D()), ms(2*l.StatementTimeout.D())); err != nil {
 		return classify(ctx, err)
 	}
+	if dropRole {
+		if err = m.setReadRole(ctx, tx, req.Target); err != nil {
+			return classify(ctx, err)
+		}
+	}
 	if err = fn(ctx, tx); err != nil {
 		return classify(ctx, err)
 	}
@@ -281,6 +292,83 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, fn
 		return classify(ctx, err)
 	}
 	return nil
+}
+
+// defaultReadRole is the predefined role (PostgreSQL 14+) that may read every
+// table, view and sequence but not run superuser-only functions.
+const defaultReadRole = "pg_read_all_data"
+
+// setReadRole switches the transaction to the target's read-only role with
+// SET LOCAL ROLE (reset at commit; RESET/SET ROLE are rejected by sqlclass).
+// The first call per target checks, inside a savepoint, that the role exists
+// and the login may switch to it; without a usable role the transaction
+// stays on the RW login in READ ONLY mode and admins get a warning.
+func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target) error {
+	role := t.ReadOnlyRole
+	if role == "" {
+		role = defaultReadRole
+	}
+	set := "SET LOCAL ROLE " + pgx.Identifier{role}.Sanitize()
+	m.mu.Lock()
+	st := m.state(t.ID)
+	checked, usable := st.readRoleChecked, st.readRole
+	m.mu.Unlock()
+	if checked {
+		if usable == "" {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, set); err != nil {
+			m.mu.Lock()
+			m.state(t.ID).readRoleChecked = false // role dropped or revoked: check again next time
+			m.mu.Unlock()
+			return err
+		}
+		return nil
+	}
+
+	ok := false
+	if _, err := tx.Exec(ctx, "SAVEPOINT athens_role"); err != nil {
+		return err
+	}
+	var n int
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM pg_roles r WHERE r.rolname = $1 AND pg_has_role(current_user, r.oid, 'MEMBER')`, role).Scan(&n)
+	if err == nil && n == 1 {
+		if _, err = tx.Exec(ctx, set); err == nil {
+			ok = true
+		}
+	}
+	if !ok {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if _, rerr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT athens_role"); rerr != nil {
+			return rerr
+		}
+		m.log().Warn("no usable read-only role; read users run on the rw login in READ ONLY transactions",
+			"target", t.ID, "role", role)
+	} else if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT athens_role"); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	st = m.state(t.ID)
+	st.readRoleChecked = true
+	st.readRole = ""
+	if ok {
+		st.readRole = role
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// ReadRole reports the read-only role of a target after the first read on its
+// RW login: checked is false before that; role is "" when none is usable.
+func (m *Manager) ReadRole(id string) (role string, checked bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.states[id]; ok {
+		return s.readRole, s.readRoleChecked
+	}
+	return "", false
 }
 
 func ms(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }
@@ -540,6 +628,7 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 		} else {
 			s.roFailed = false
 			s.missingDB, s.fallbackDB = "", ""
+			s.readRole, s.readRoleChecked = "", false
 		}
 	}
 	m.mu.Unlock()

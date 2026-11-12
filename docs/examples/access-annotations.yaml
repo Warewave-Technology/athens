@@ -18,6 +18,7 @@ metadata:
   annotations:
     athens.warewave.io/enabled: "true"
     athens.warewave.io/readonly: "true"
+    athens.warewave.io/readonly-role: athens_reader   # NOLOGIN role read users switch to
     athens.warewave.io/access: "system-admins:rw, developers:ro"
     athens.warewave.io/environment: production
 spec:

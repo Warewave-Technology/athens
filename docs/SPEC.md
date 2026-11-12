@@ -162,6 +162,7 @@ SET LOCAL application_name = 'athens:<email>'      -- truncated to 63 bytes
 SET LOCAL statement_timeout = '<limits.statementTimeout>'
 SET LOCAL lock_timeout = '<limits.lockTimeout>'
 SET LOCAL idle_in_transaction_session_timeout = '<limits.statementTimeout*2>'
+SET LOCAL ROLE <readonly-role | pg_read_all_data>  -- read users on the RW login only, if usable (ADR-026)
 <statement>
 COMMIT | ROLLBACK
 ```
