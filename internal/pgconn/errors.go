@@ -22,6 +22,12 @@ var ErrTimeout = errors.New("statement timeout")
 // client disconnect, target removed).
 var ErrCancelled = errors.New("cancelled")
 
+// isMissingDatabase reports SQLSTATE 3D000 (invalid_catalog_name).
+func isMissingDatabase(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "3D000"
+}
+
 func isAuthError(err error) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && (pe.Code == "28P01" || pe.Code == "28000")

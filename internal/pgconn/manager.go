@@ -67,6 +67,7 @@ type Options struct {
 
 type pool struct {
 	key      Key
+	db       string // database the pool connects to (resolved for Database "")
 	p        *pgxpool.Pool
 	created  time.Time
 	mu       sync.Mutex
@@ -90,7 +91,10 @@ type targetState struct {
 	checked   time.Time
 	lastError string
 	roFailed  bool
-	running   map[*runHandle]struct{}
+	// missingDB / fallbackDB: the guessed initial database does not exist and
+	// the default-database pool uses fallbackDB instead.
+	missingDB, fallbackDB string
+	running               map[*runHandle]struct{}
 }
 
 type runHandle struct{ cancel context.CancelFunc }
@@ -305,6 +309,9 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 		}
 		conn, err = p.p.Acquire(ctx)
 	}
+	if err != nil && key.Database == "" && isMissingDatabase(err) {
+		conn, p, err = m.acquireFallbackDB(ctx, t, key, p.db, err)
+	}
 	if err != nil {
 		m.recordError(t.ID, err)
 		return nil, &ErrUnavailable{Cause: err}
@@ -312,6 +319,41 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	p.touch()
 	m.recordOK(t.ID)
 	return conn, nil
+}
+
+// fallbackDBs are tried, in order, when the initial database of a target does
+// not exist (DISCOVERY §4.4 guesses it from env or the user name).
+var fallbackDBs = []string{"postgres", "template1"}
+
+// acquireFallbackDB recreates the default-database pool of t on the first
+// fallback database that exists and remembers it until the target changes.
+func (m *Manager) acquireFallbackDB(ctx context.Context, t discovery.Target, key Key, missing string, cause error) (*pgxpool.Conn, *pool, error) {
+	for _, db := range fallbackDBs {
+		if db == missing {
+			continue
+		}
+		m.mu.Lock()
+		st := m.state(t.ID)
+		st.missingDB, st.fallbackDB = missing, db
+		m.mu.Unlock()
+		p, err := m.pool(ctx, t, key, true)
+		if err != nil {
+			return nil, nil, err
+		}
+		conn, err := p.p.Acquire(ctx)
+		if err == nil {
+			m.log().Warn("initial database does not exist, using a fallback", "target", t.ID, "missing", missing, "using", db)
+			return conn, p, nil
+		}
+		if !isMissingDatabase(err) {
+			return nil, nil, err
+		}
+	}
+	m.mu.Lock()
+	st := m.state(t.ID)
+	st.missingDB, st.fallbackDB = "", ""
+	m.mu.Unlock()
+	return nil, nil, cause
 }
 
 func (m *Manager) recordError(id string, err error) {
@@ -353,7 +395,7 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 		return nil, &ErrUnavailable{Cause: err}
 	}
 	metrics.PoolCreate.WithLabelValues(t.ID, "ok").Inc()
-	created := &pool{key: key, p: np, created: time.Now(), lastUsed: time.Now()}
+	created := &pool{key: key, db: cfg.ConnConfig.Database, p: np, created: time.Now(), lastUsed: time.Now()}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if existing, ok := m.pools[key]; ok { // lost a creation race
@@ -375,7 +417,12 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 	}
 	db := key.Database
 	if db == "" {
-		db = m.opt.Resolver.DefaultDB(ctx, t)
+		m.mu.Lock()
+		db = m.state(t.ID).fallbackDB
+		m.mu.Unlock()
+		if db == "" {
+			db = m.opt.Resolver.DefaultDB(ctx, t)
+		}
 	}
 	mode := t.SSLMode
 	if mode == "" {
@@ -492,6 +539,7 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 			delete(m.states, e.Target.ID)
 		} else {
 			s.roFailed = false
+			s.missingDB, s.fallbackDB = "", ""
 		}
 	}
 	m.mu.Unlock()
@@ -516,6 +564,17 @@ func (m *Manager) ROFallback(id string) bool {
 	defer m.mu.Unlock()
 	s, ok := m.states[id]
 	return ok && s.roFailed
+}
+
+// DefaultDBFallback reports the missing initial database of a target and the
+// fallback used instead ("" when none).
+func (m *Manager) DefaultDBFallback(id string) (missing, using string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.states[id]; ok {
+		return s.missingDB, s.fallbackDB
+	}
+	return "", ""
 }
 
 type PoolStat struct {

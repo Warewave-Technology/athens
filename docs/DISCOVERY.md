@@ -135,7 +135,7 @@ On a StatefulSet, Deployment or Service:
 | `user` | no | fixed user if secret has no user key |
 | `readonly-secret` | no | (enables RO credential) |
 | `readonly-user-key` / `readonly-password-key` | no | `username` / `password` |
-| `database` | no | user name, then `postgres` |
+| `database` | no | env, else user name; `postgres` if that does not exist |
 | `display-name` | no | name |
 | `environment` | no | `""` |
 | `sslmode` | no | `discovery.defaultSSLMode` (prefer) |
@@ -184,7 +184,15 @@ Password env names (in order): `POSTGRES_PASSWORD`, `POSTGRESQL_PASSWORD`,
 `POSTGRES_POSTGRES_PASSWORD`, `POSTGRESQL_POSTGRES_PASSWORD`.
 User env names: `POSTGRES_USER`, `POSTGRESQL_USERNAME`, `POSTGRESQL_USER`
 (default `postgres`). Database env names: `POSTGRES_DB`, `POSTGRES_DATABASE`,
-`POSTGRESQL_DATABASE` (default = user).
+`POSTGRESQL_DATABASE` (default = user, the official image's convention).
+
+The initial database is only used to connect and list databases. If it does
+not exist (SQLSTATE 3D000: images that don't create a database named after
+the user, or data initialised with other env), the pool manager connects to
+`postgres`, then `template1`, instead and shows admins the warning
+`database "<guess>" does not exist; connecting to "postgres" instead`. The
+`database` annotation fixes the guess; a database the user picks explicitly
+never falls back.
 
 Pairing rule: if `POSTGRES_POSTGRES_PASSWORD` (bitnami admin) is chosen, user
 is `postgres`; otherwise user from user env.

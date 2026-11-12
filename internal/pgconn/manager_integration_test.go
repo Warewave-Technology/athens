@@ -356,3 +356,38 @@ func TestStaleConnectionsRecovered(t *testing.T) {
 		}
 	})
 }
+
+// TestMissingDefaultDatabase: the guessed initial database (here a user name
+// without a database of that name) does not exist; the default-database pool
+// falls back to "postgres" and reports it, explicit databases are untouched.
+func TestMissingDefaultDatabase(t *testing.T) {
+	in := instances[0]
+	tg, client := in.Target("nodb")
+	tg.DefaultDB = "vmetric"
+	m := in.Manager(tg, client, pgtest.Limits())
+	defer m.CloseAll()
+	var db string
+	if err := m.Run(context.Background(), pgtest.Req(tg, "", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "SELECT current_database()").Scan(&db)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if missing, using := m.DefaultDBFallback(tg.ID); db != "postgres" || missing != "vmetric" || using != "postgres" {
+		t.Fatalf("db=%s missing=%q using=%q", db, missing, using)
+	}
+	if err := m.Run(context.Background(), pgtest.Req(tg, "app", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "SELECT current_database()").Scan(&db)
+	}); err != nil || db != "app" {
+		t.Fatalf("explicit database: %v %s", err, db)
+	}
+	// a missing explicit database is still an error, not a silent fallback
+	err := m.Run(context.Background(), pgtest.Req(tg, "nope", authz.Read), func(context.Context, pgx.Tx) error { return nil })
+	if err == nil {
+		t.Fatal("missing explicit database must fail")
+	}
+	// a target change clears the fallback
+	m.TargetChanged(discovery.Event{Type: discovery.Updated, Target: tg})
+	if _, using := m.DefaultDBFallback(tg.ID); using != "" {
+		t.Fatalf("fallback kept after target change: %q", using)
+	}
+}

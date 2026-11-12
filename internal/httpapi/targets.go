@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -120,6 +121,9 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 			j.Warnings = t.Warnings
 			if s.Pools.ROFallback(t.ID) {
 				j.Warnings = append(j.Warnings, "read-only credential was rejected; using rw credential with READ ONLY transactions")
+			}
+			if missing, using := s.Pools.DefaultDBFallback(t.ID); using != "" {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("database %q does not exist; connecting to %q instead (set the athens.warewave.io/database annotation)", missing, using))
 			}
 		}
 		out = append(out, j)

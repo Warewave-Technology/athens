@@ -356,7 +356,7 @@ Service, CNPG `Cluster` or Zalando `postgresql`.
 | `user` | from `secret` | fixed user name (Zalando: which user's Secret to use) |
 | `readonly-secret` | — | Secret with a read-only login for read users |
 | `readonly-user-key` / `readonly-password-key` | `username` / `password` | key names in `readonly-secret` |
-| `database` | user name, then `postgres` | database opened first |
+| `database` | `POSTGRES_DB` and similar env, else the user name; `postgres` if that does not exist | database opened first (only used to list the databases) |
 | `service` | matched by selector | Service to connect through (on a workload) |
 | `port` | the Service's postgres port, else 5432 | port override |
 | `sslmode` | `discovery.defaultSSLMode` (`prefer`) | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full` |
@@ -404,6 +404,7 @@ sidebar.
 | invalid ... annotation ignored | an annotation value was not understood |
 | access entry ... ignored | see [Who may use a database](#who-may-use-a-database) |
 | read-only credential was rejected | the `readonly-secret` login failed; athens uses the main login with READ ONLY transactions |
+| database "..." does not exist; connecting to "postgres" instead | athens guessed the first database from the env or the user name and it doesn't exist; set `athens.warewave.io/database` to a database that does |
 
 The database does not appear at all:
 1. Is the annotation spelled exactly `athens.warewave.io/enabled: "true"`
