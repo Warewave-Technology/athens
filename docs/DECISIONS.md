@@ -152,7 +152,7 @@ a Slonik-style elephant and a database stack, navy/blue/cyan palette, the
 preview. The motifs echo the Kubernetes wheel and the PostgreSQL elephant;
 both are third-party marks (CNCF, PostgreSQL Community Association), so
 clear their use with the owners' trademark policies before any commercial
-or trademark use of the logo. The UI theme stays Aegean.
+or trademark use of the logo. The UI theme is Gruvbox since ADR-025.
 
 ## ADR-020 Discovery is opt-in (annotation-only) by default
 Automatic discovery showed every postgres-looking workload in the listed
@@ -235,3 +235,15 @@ namespace, but only reads those referenced by annotated objects in the same
 namespace; clusters that need a hard boundary list namespaces. Namespaces
 without targets or problems are left off the admin status list. Supersedes
 ADR-006 and the opt-out/automatic mode of ADR-020.
+
+## ADR-025 Gruvbox theme with an aqua accent
+The owner preferred the Gruvbox look over Aegean (ADR-019). After a
+side-by-side preview of the dark and light modes with four accents, aqua
+was chosen. → `web/src/styles/theme.css` maps the Gruvbox palette onto the
+existing tokens: bg0/bg0_h/bg0_s for page, surfaces and sidebar, fg1-fg4
+for text, aqua (`#427b58` light, `#8ec07c` dark) as the accent, orange as
+the production colour (the `--laurel-*` tokens keep their name), red for
+danger, Gruvbox syntax colours in the editor. Solid light-mode buttons use a
+darker aqua (`#376a4b`) so cream labels pass WCAG AA (5.6:1); dark mode puts
+`#282828` text on `#8ec07c` (7:1). Layout, components, IBM Plex fonts and the
+brand logo are unchanged. Supersedes the palette part of ADR-019.

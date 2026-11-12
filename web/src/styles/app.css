@@ -614,7 +614,7 @@ kbd {
   background: var(--surface);
   border-color: var(--line);
   color: var(--text);
-  box-shadow: 0 1px 2px rgba(27, 30, 36, 0.06);
+  box-shadow: 0 1px 2px rgba(60, 56, 54, 0.08);
 }
 
 .view-body {
@@ -1284,7 +1284,7 @@ table.simple td.wrap {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: rgba(13, 19, 32, 0.45);
+  background: rgba(29, 32, 33, 0.55);
 }
 
 .modal {

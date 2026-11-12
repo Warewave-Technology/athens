@@ -1,7 +1,9 @@
 /*
- * Aegean — athens design tokens.
- * Marble and limestone neutrals, one Aegean blue accent, laurel gold reserved
- * for environment warnings (production). IBM Plex Sans for UI, Plex Mono for data.
+ * Gruvbox — athens design tokens (ADR-025).
+ * The Gruvbox palette with aqua as the accent, orange reserved for
+ * environment warnings (production), Gruvbox syntax colours in the editor.
+ * IBM Plex Sans for UI, Plex Mono for data. The token names (laurel = the
+ * production colour) are kept from the earlier Aegean theme.
  */
 @import "@fontsource/ibm-plex-sans/400.css";
 @import "@fontsource/ibm-plex-sans/500.css";
@@ -11,79 +13,78 @@
 
 :root,
 :root[data-theme="light"] {
-  --bg: #f9f8f5; /* marble */
-  --surface: #ffffff;
-  --sidebar: #f1efe9; /* limestone */
-  --subtle: #ebe8e1; /* hover fill */
-  --line: #e4e1d9;
-  --line-strong: #d3cfc4;
-  --text: #1b1e24; /* ink */
-  --text-2: #55534d;
-  --text-3: #8a877e; /* pumice */
-  --accent: #1d5fa8; /* aegean */
-  --accent-fill: #1d5fa8;
-  --accent-hover: #174f8d;
-  --accent-soft: #e7eef7;
-  --accent-text: #1a5496;
-  --on-accent: #ffffff;
-  --laurel: #9c7a28;
-  --laurel-soft: #f5eedb;
-  --laurel-text: #7a5e1b;
-  --danger: #b3372b;
-  --danger-fill: #b3372b;
-  --danger-soft: #f8e7e4;
-  --success: #3b7553;
-  --success-soft: #e5f0e9;
-  --selection: #dbe6f3;
-  --dirty: #fbf3d9;
-  --null: #a8a49a;
-  --focus: 0 0 0 3px rgba(29, 95, 168, 0.22);
-  --shadow-pop: 0 12px 32px rgba(27, 30, 36, 0.12), 0 2px 6px rgba(27, 30, 36, 0.06);
-  --syn-keyword: #1d5fa8;
-  --syn-string: #3b7553;
-  --syn-number: #8a4fa0;
-  --syn-comment: #8a877e;
-  --syn-type: #9c7a28;
-  --syn-fn: #1e7b85;
+  --bg: #fbf1c7; /* bg0 */
+  --surface: #f9f5d7; /* bg0_h */
+  --sidebar: #f2e5bc; /* bg0_s */
+  --subtle: #ebdbb2; /* bg1, hover fill */
+  --line: #ebdbb2;
+  --line-strong: #d5c4a1; /* bg2 */
+  --text: #3c3836; /* fg1 */
+  --text-2: #504945;
+  --text-3: #7c6f64; /* fg4 */
+  --accent: #427b58; /* aqua: outlines, focus, resize handles */
+  --accent-fill: #376a4b; /* solid buttons: cream text passes AA */
+  --accent-hover: #2f5c41;
+  --accent-soft: #e2e2b9;
+  --accent-text: #376a4b;
+  --on-accent: #fbf1c7;
+  --laurel: #af3a03; /* orange: production */
+  --laurel-soft: #f6d9b3;
+  --laurel-text: #af3a03;
+  --danger: #9d0006;
+  --danger-fill: #9d0006;
+  --danger-soft: #f3d4bf;
+  --success: #79740e;
+  --success-soft: #e9e6b4;
+  --selection: #e2e2b9;
+  --dirty: #f6e3a6;
+  --null: #a89984;
+  --focus: 0 0 0 3px rgba(66, 123, 88, 0.25);
+  --shadow-pop: 0 12px 32px rgba(60, 56, 54, 0.14), 0 2px 6px rgba(60, 56, 54, 0.08);
+  --syn-keyword: #9d0006;
+  --syn-string: #79740e;
+  --syn-number: #8f3f71;
+  --syn-comment: #928374;
+  --syn-type: #b57614;
+  --syn-fn: #427b58;
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  /* Aegean night: neutral charcoal, the Aegean blue only as accent */
-  --bg: #111214;
-  --surface: #18191c;
-  --sidebar: #0e0f11;
-  --subtle: #232529;
-  --line: #2c2e33;
-  --line-strong: #3a3d44;
-  --text: #e6e7ea;
-  --text-2: #a3a6ae;
-  --text-3: #80848e;
-  --accent: #5b9be6; /* outlines, focus, resize handles */
-  --accent-fill: #3a78c4; /* solid buttons, brand mark: white text passes AA */
-  --accent-hover: #4686d4;
-  --accent-soft: #1b2a40;
-  --accent-text: #8dbbf0;
-  --on-accent: #ffffff;
-  --laurel: #d4b26a;
-  --laurel-soft: #2a2416;
-  --laurel-text: #dcbf7e;
-  --danger: #f08a7e;
-  --danger-fill: #c4473b;
-  --danger-soft: #3a1f1d;
-  --success: #7cc49a;
-  --success-soft: #17281e;
-  --selection: #1b2a40;
-  --dirty: #2f2814;
-  --null: #747882;
-  --focus: 0 0 0 3px rgba(91, 155, 230, 0.35);
-  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --syn-keyword: #82b4ee;
-  --syn-string: #9bcf9f;
-  --syn-number: #d1a3e8;
-  --syn-comment: #6c717b;
-  --syn-type: #d4b26a;
-  --syn-fn: #7fcfd6;
+  --bg: #282828; /* bg0 */
+  --surface: #32302f; /* bg0_s */
+  --sidebar: #1d2021; /* bg0_h */
+  --subtle: #3c3836; /* bg1 */
+  --line: #3c3836;
+  --line-strong: #504945; /* bg2 */
+  --text: #ebdbb2; /* fg1 */
+  --text-2: #d5c4a1;
+  --text-3: #a89984; /* fg4 */
+  --accent: #8ec07c; /* aqua */
+  --accent-fill: #8ec07c;
+  --accent-hover: #a2cd92;
+  --accent-soft: #3a4337;
+  --accent-text: #8ec07c;
+  --on-accent: #282828;
+  --laurel: #fe8019; /* orange: production */
+  --laurel-soft: #4a3424;
+  --laurel-text: #fe8019;
+  --danger: #fb4934;
+  --danger-fill: #cc241d;
+  --danger-soft: #4a2a25;
+  --success: #b8bb26;
+  --success-soft: #3d3d22;
+  --selection: #3a4337;
+  --dirty: #4a3f1c;
+  --null: #7c6f64;
+  --focus: 0 0 0 3px rgba(142, 192, 124, 0.32);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(235, 219, 178, 0.05);
+  --syn-keyword: #fb4934;
+  --syn-string: #b8bb26;
+  --syn-number: #d3869b;
+  --syn-comment: #928374;
+  --syn-type: #fabd2f;
+  --syn-fn: #8ec07c;
   color-scheme: dark;
 }
 
@@ -179,7 +180,7 @@ button.primary:hover:not(:disabled) {
 button.danger {
   background: var(--danger-fill);
   border-color: var(--danger-fill);
-  color: #fff;
+  color: #fbf1c7;
 }
 
 button.danger:hover:not(:disabled) {

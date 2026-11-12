@@ -343,7 +343,7 @@ parameters. Request log: method, route, status, duration, user id.
 ## 13. Frontend
 
 Visual design from `docs/design/`. If a screen is missing in design, follow
-existing design language: the Aegean theme (ADR-019, light + dark + system).
+existing design language: the Gruvbox theme with an aqua accent (ADR-025, light + dark + system).
 
 Screens / components:
 1. **Login redirect** — unauthenticated `/api` → 401; SPA redirects to
@@ -423,5 +423,5 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
   (Entra group-name claims or `authz.groupAliases`).
 - Whether `write` is ever granted on production targets (default: allowed
   but with mandatory confirmation, §7.3).
-- Design files to be placed under `docs/design/` (until then: the Aegean
+- Design files to be placed under `docs/design/` (until then: the Gruvbox
   theme, ADR-019).
