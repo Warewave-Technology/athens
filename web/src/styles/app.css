@@ -535,3 +535,164 @@ table.simple td.mono {
 .filter-row input {
   min-width: 240px;
 }
+
+.sql-tab {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.sql-tab.with-drawer {
+  grid-template-columns: 1fr 360px;
+}
+
+.sql-main {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+}
+
+.sql-editor {
+  min-height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--bg1);
+}
+
+.sql-editor .cm-editor {
+  height: 100%;
+}
+
+.hresizer {
+  cursor: row-resize;
+  background: var(--bg1);
+}
+
+.hresizer:hover {
+  background: var(--accent);
+}
+
+.sql-results {
+  display: grid;
+  grid-template-rows: 28px 1fr;
+  min-height: 0;
+}
+
+.sql-result-body {
+  display: grid;
+  min-height: 0;
+}
+
+.messages > div {
+  margin-bottom: 4px;
+}
+
+.warn-text {
+  color: var(--orange);
+}
+
+.small {
+  font-size: 11px;
+}
+
+.drawer {
+  border-left: 1px solid var(--bg2);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bg2);
+}
+
+.drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.drawer-list li {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bg1);
+  cursor: pointer;
+}
+
+.drawer-list li:hover {
+  background: var(--bg1);
+}
+
+.drawer-list pre {
+  margin: 4px 0 0;
+  max-height: 80px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.drawer-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.spacer-left {
+  margin-left: auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+}
+
+.modal {
+  width: min(560px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--bg2);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 16px 20px;
+}
+
+.modal h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.confirm-summary {
+  background: var(--bg-soft);
+  border: 1px solid var(--bg1);
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.confirm-typed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cm-lintRange-error {
+  background-color: color-mix(in srgb, var(--red) 22%, transparent);
+  text-decoration: underline wavy var(--red);
+}

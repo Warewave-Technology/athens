@@ -125,6 +125,11 @@ func TestCatalogEndpoints(t *testing.T) {
 		} else {
 			resp.json(t, &weird)
 		}
+		var comp struct{ Tables map[string][]string }
+		w.get(dbPath + "/completion").json(t, &comp)
+		if cols := comp.Tables["shop.orders"]; len(cols) != 8 || cols[0] != "id" {
+			t.Errorf("completion %v", comp.Tables["shop.orders"])
+		}
 		if resp := w.get(dbPath + "/relations/shop/missing/structure"); resp.status != 404 {
 			t.Errorf("missing relation %d", resp.status)
 		}

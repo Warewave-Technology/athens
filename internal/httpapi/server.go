@@ -108,6 +108,7 @@ func (s *Server) routes() {
 	s.handle("GET "+db+"/relations/{schema}/{rel}/structure", s.structure)
 	s.handle("POST "+db+"/relations/{schema}/{rel}/rows/query", s.rowsQuery)
 	s.handle("GET "+db+"/relations/{schema}/{rel}/rows/cell", s.rowsCell)
+	s.handle("GET "+db+"/completion", s.completion)
 	s.handle("POST "+db+"/query", s.executeQuery)
 	s.handle("POST /queries/{id}/cancel", s.cancelQuery)
 	s.handle("GET /history", s.listHistory)

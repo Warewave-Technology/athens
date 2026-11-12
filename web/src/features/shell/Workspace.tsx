@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { SchemaTree } from "../schema/SchemaTree";
 import { StructureView } from "../table/StructureView";
 import { TableData } from "../table/TableData";
+import { SqlTab } from "../sql/SqlTab";
 import { useRememberLastTable } from "./lastTable";
 import { useWorkspace, type Tab } from "../../store/workspace";
 
@@ -11,7 +12,7 @@ function tabTitle(t: Tab) {
 
 function TabContent({ tab }: { tab: Tab }) {
   const setSub = useWorkspace((s) => s.setSub);
-  if (tab.kind === "sql") return <div className="pad muted">SQL editor (coming in M5)</div>;
+  if (tab.kind === "sql") return <SqlTab targetId={tab.targetId} db={tab.db} />;
   return (
     <div className="table-tab">
       <div className="subtabs">

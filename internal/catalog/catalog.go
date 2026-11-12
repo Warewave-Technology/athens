@@ -146,3 +146,26 @@ func Lookup(ctx context.Context, tx pgx.Tx, schema, name string) (uint32, Kind, 
 	}
 	return oid, kindOf(kind), err
 }
+
+// CompletionColumns maps "schema.relation" to its column names (editor
+// autocompletion), non-system schemas only, capped at limit columns.
+func CompletionColumns(ctx context.Context, tx pgx.Tx, limit int) (map[string][]string, error) {
+	rows, err := tx.Query(ctx, `SELECT n.nspname, c.relname, a.attname
+		FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind IN ('r','p','v','m','f') AND a.attnum > 0 AND NOT a.attisdropped AND `+systemSchemaFilter+`
+		ORDER BY n.nspname, c.relname, a.attnum LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var s, r, col string
+		if err := rows.Scan(&s, &r, &col); err != nil {
+			return nil, err
+		}
+		k := s + "." + r
+		out[k] = append(out[k], col)
+	}
+	return out, rows.Err()
+}

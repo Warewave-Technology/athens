@@ -243,6 +243,24 @@ func (s *Server) structure(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (s *Server) completion(w http.ResponseWriter, r *http.Request) error {
+	t, db, lvl, err := s.targetDB(r)
+	if err != nil {
+		return err
+	}
+	var cols map[string][]string
+	err = s.Pools.Run(r.Context(), s.dbReq(r, t, db, lvl), func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		cols, err = catalog.CompletionColumns(ctx, tx, 100000)
+		return err
+	})
+	if err != nil {
+		return s.mapDBError(err, "")
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"tables": cols})
+	return nil
+}
+
 func (s *Server) adminPools(w http.ResponseWriter, r *http.Request) error {
 	if err := s.requireAdmin(r); err != nil {
 		return err

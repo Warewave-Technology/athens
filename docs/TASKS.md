@@ -74,12 +74,12 @@ column names / filter values are rejected or safely bound (tests); all tricky
 types (SPEC §15) round-trip as text; 100 columns × 500 rows renders smoothly.
 
 ## M5 — SQL editor
-- [ ] `internal/sqlclass` with ≥ 80 fixture statements (SPEC §7.2), destructive detection
-- [ ] `internal/query`: execute single statement, enforcement (§7.3), confirmation 409, production rule, notices capture, result cap, command tag, rowsAffected
-- [ ] Cancel registry + endpoint, client disconnect cancel, per-user concurrency limit (429)
-- [ ] History (trim), saved queries CRUD, drafts, ui-state endpoints
-- [ ] Audit `query_execute`, `query_cancel`, `access_denied`, `confirm_required`
-- [ ] Frontend: CodeMirror 6 + PG dialect + catalog autocompletion, run/cancel shortcuts, timer, results + messages panes, error position marker, history & favorites drawers, draft autosave, confirm dialog (typed db name for production), CSV export of result
+- [x] `internal/sqlclass` with ≥ 80 fixture statements (SPEC §7.2), destructive detection
+- [x] `internal/query`: execute single statement, enforcement (§7.3), confirmation 409, production rule, notices capture, result cap, command tag, rowsAffected
+- [x] Cancel registry + endpoint, client disconnect cancel, per-user concurrency limit (429)
+- [x] History (trim), saved queries CRUD, drafts, ui-state endpoints
+- [x] Audit `query_execute`, `query_cancel`, `access_denied`, `confirm_required`
+- [x] Frontend: CodeMirror 6 + PG dialect + catalog autocompletion, run/cancel shortcuts, timer, results + messages panes, error position marker, history & favorites drawers, draft autosave, confirm dialog (typed db name for production), CSV export of result
 
 **Accept:** `DROP TABLE` without confirm → 409, with confirm → executes and
 audited; read user running `UPDATE` → 403 and audited; `SELECT pg_sleep(60)`
