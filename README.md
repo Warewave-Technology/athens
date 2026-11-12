@@ -122,7 +122,19 @@ metadata:
 kubectl -n payments annotate statefulset orders-db athens.warewave.io/enabled=true
 ```
 
-All annotations are listed in [`docs/DISCOVERY.md`](docs/DISCOVERY.md) §4.1.
+Two annotations control access per database (ADR-022):
+
+```yaml
+    athens.warewave.io/readonly: "true"                          # everyone gets read only
+    athens.warewave.io/access: "system-admins:rw,developers:ro"  # who may use it
+```
+
+`access` replaces the `authz.rules` for that database: only the listed groups
+(Entra group IDs, or names mapped in `authz.groupAliases`) see it. With
+`readonly: "true"` everyone on the list is `ro`.
+
+All annotations are listed in [`docs/DISCOVERY.md`](docs/DISCOVERY.md) §4.1
+and §2b.
 Setting `discovery.requireAnnotation: false` switches to automatic discovery of
 unannotated postgres workloads and operator clusters.
 

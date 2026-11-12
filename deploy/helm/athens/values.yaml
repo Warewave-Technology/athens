@@ -18,6 +18,8 @@ config:
     readOnly: false
     adminGroups: []
     rules: []
+    annotationAccess: true   # athens.warewave.io/access annotations replace the rules for their target
+    groupAliases: {}         # name -> Entra group ID, for access annotations
   discovery:
     namespaces: []   # every namespace listed gets a Role + RoleBinding
     cnpg:

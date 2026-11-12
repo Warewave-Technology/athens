@@ -1525,3 +1525,10 @@ table.simple td.warn-cell {
 table.simple td > .mono {
   white-space: nowrap;
 }
+
+.access-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 280px;
+}

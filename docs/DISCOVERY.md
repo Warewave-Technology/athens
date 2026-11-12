@@ -84,6 +84,31 @@ Unannotated workloads and clusters are ignored silently. With
 `requireAnnotation: false` every source in §4 also runs for unannotated
 objects (the original behaviour).
 
+## 2b. Access annotations (ADR-022)
+
+Two annotations, on the same object as `enabled` (StatefulSet, Deployment,
+Service, CNPG `Cluster`, Zalando `postgresql`), shape who may use a target:
+
+- `<prefix>/readonly: "true"` — every user's level on the target is capped at
+  `read`: READ ONLY transactions, the read-only credential when present, no
+  grid edits, DML/DDL rejected in the editor. Any value other than
+  `true`/`false` is treated as `true` (with a warning).
+- `<prefix>/access: "system-admins:rw,developers:ro"` — the target's access
+  list. When present it **replaces** the `authz.rules` for this target: only
+  the listed groups see it. Entries are separated by commas, semicolons or
+  spaces; levels are `rw`/`write` or `ro`/`read`; a group listed twice gets
+  the higher level. A group is an Entra group ID as in the token, or a name
+  from `authz.groupAliases`. Invalid entries are dropped with a warning; an
+  annotation that ends up granting nobody hides the target from everyone
+  (fails closed).
+
+Both together: everyone on the access list gets `ro`. The global
+`authz.readOnly` switch still applies, and `authz.adminGroups` still gets no
+data access by itself. `authz.annotationAccess: false` makes athens ignore the
+`access` annotation (rules apply; `readonly` still does). Both annotations also
+apply to unannotated targets in automatic mode. Admin → Discovery shows the
+effective access source per target.
+
 ## 3. Source priority and dedup
 
 Order: `annotation` > `cnpg` > `zalando` > `generic`.
@@ -121,6 +146,8 @@ On a StatefulSet, Deployment or Service:
 | `environment` | no | `""` |
 | `sslmode` | no | `discovery.defaultSSLMode` (prefer) |
 | `ca-secret` / `ca-key` | no | `ca.crt` |
+| `readonly` | no | `"true"` caps every user at read (§2b) |
+| `access` | no | `group:rw,group:ro,...` replaces the config rules (§2b) |
 
 \* If `secret` missing on a workload: fall back to generic env resolution (§4.4)
 for credentials but keep the annotation metadata. If still unresolved: target

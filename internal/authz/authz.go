@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/Warewave-Technology/athens/internal/config"
+	"github.com/Warewave-Technology/athens/internal/discovery"
 )
 
 type Level int
@@ -37,13 +38,15 @@ type rule struct {
 }
 
 type Authorizer struct {
-	rules    []rule
-	admins   []string
-	readOnly bool
+	rules            []rule
+	admins           []string
+	readOnly         bool
+	annotationAccess bool
+	aliases          map[string]string
 }
 
 func New(c config.Authz) *Authorizer {
-	a := &Authorizer{admins: c.AdminGroups, readOnly: c.ReadOnly}
+	a := &Authorizer{admins: c.AdminGroups, readOnly: c.ReadOnly, annotationAccess: c.AnnotationAccess, aliases: c.GroupAliases}
 	for _, r := range c.Rules {
 		lvl := Read
 		if r.Level == "write" {
@@ -73,19 +76,60 @@ func (a *Authorizer) IsAdmin(groups []string) bool {
 	return slices.ContainsFunc(groups, func(g string) bool { return slices.Contains(a.admins, g) })
 }
 
-// TargetLevel is the highest level any rule grants on the target for any
+// TargetLevel is the highest level the user has on the target for any
 // database. None means the target is invisible to the user.
-func (a *Authorizer) TargetLevel(groups []string, namespace, name string) Level {
-	return a.eval(groups, namespace, name, nil)
+func (a *Authorizer) TargetLevel(groups []string, t discovery.Target) Level {
+	return a.eval(groups, t, nil)
 }
 
-// Effective is the level for one database of a target (max of matching rules,
-// capped at Read when the global read-only switch is on).
-func (a *Authorizer) Effective(groups []string, namespace, name, database string) Level {
-	return a.eval(groups, namespace, name, &database)
+// Effective is the level for one database of a target: the target's access
+// annotation when present (and allowed), else the max of matching rules;
+// capped at Read by the target's readonly annotation and the global switch.
+func (a *Authorizer) Effective(groups []string, t discovery.Target, database string) Level {
+	return a.eval(groups, t, &database)
 }
 
-func (a *Authorizer) eval(groups []string, namespace, name string, database *string) Level {
+// UsesAnnotation reports whether the target's access annotation replaces the
+// rules.
+func (a *Authorizer) UsesAnnotation(t discovery.Target) bool {
+	return t.Access != nil && a.annotationAccess
+}
+
+func (a *Authorizer) eval(groups []string, t discovery.Target, database *string) Level {
+	var best Level
+	if a.UsesAnnotation(t) {
+		best = a.grants(groups, t.Access.Grants)
+	} else {
+		best = a.rulesLevel(groups, t.Namespace, t.Name, database)
+	}
+	if (a.readOnly || t.ReadOnly) && best > Read {
+		best = Read
+	}
+	return best
+}
+
+// grants is the highest level of the grants naming one of the user's groups,
+// by ID or by alias.
+func (a *Authorizer) grants(groups []string, gs []discovery.AccessGrant) Level {
+	best := None
+	for _, g := range gs {
+		id := g.Group
+		if alias, ok := a.aliases[g.Group]; ok {
+			id = alias
+		}
+		if !slices.Contains(groups, id) && !slices.Contains(groups, g.Group) {
+			continue
+		}
+		lvl := Read
+		if g.Level == "write" {
+			lvl = Write
+		}
+		best = max(best, lvl)
+	}
+	return best
+}
+
+func (a *Authorizer) rulesLevel(groups []string, namespace, name string, database *string) Level {
 	best := None
 	for _, r := range a.rules {
 		if r.level <= best || !slices.ContainsFunc(groups, func(g string) bool { return slices.Contains(r.groups, g) }) {
@@ -98,9 +142,6 @@ func (a *Authorizer) eval(groups []string, namespace, name string, database *str
 			continue
 		}
 		best = r.level
-	}
-	if a.readOnly && best > Read {
-		best = Read
 	}
 	return best
 }

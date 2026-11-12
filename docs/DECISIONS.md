@@ -174,3 +174,22 @@ audit view are the same view. Admins can export the filtered log as CSV or
 JSON Lines (capped at 100 000 records, export audited, CSV formula cells
 prefixed with `'`). The SQLite copy stays app-level tamper-resistant only;
 OPERATIONS.md documents shipping the stdout copy to append-only storage.
+
+## ADR-022 Per-target access from annotations
+The owner wants the team that runs a database to decide, next to the
+database, that it is read-only and who may use it, without a change to the
+athens config. → Two annotations on the discovered object:
+`<prefix>/readonly: "true"` caps every user at read on that target, and
+`<prefix>/access: "group:rw,group:ro"` replaces `authz.rules` for that target
+(authoritative, not additive: "the groups that can access this database").
+With both, everyone on the list is read-only. Fail closed everywhere: an
+unparsable `readonly` value means read-only, invalid access entries are
+dropped, and an access list that grants nobody hides the target. Groups are
+matched as Entra group IDs or through `authz.groupAliases` names, since tokens
+carry IDs. Trust: whoever can annotate workloads in a watched namespace can
+grant access to that database through athens; in practice the same people can
+already read its Secret. Platform teams that do not accept this set
+`authz.annotationAccess: false` (the `access` annotation is then ignored and
+shown as such on Admin → Discovery; `readonly` still applies because it only
+removes rights). The global `authz.readOnly` switch and admin-has-no-data
+rules are unchanged.

@@ -1,0 +1,86 @@
+{
+  "targets": [
+    {
+      "id": "demo/crm",
+      "namespace": "demo",
+      "name": "crm",
+      "displayName": "crm",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "crm",
+        "uid": "uid-crm"
+      },
+      "service": "crm",
+      "host": "crm.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "crm-env",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "access entry \"bad-entry\" ignored: expected group:rw or group:ro",
+        "access entry \"qa:admin\" ignored: level must be rw or ro"
+      ],
+      "readOnly": true,
+      "access": {
+        "grants": [
+          {
+            "group": "system-admins",
+            "level": "write"
+          },
+          {
+            "group": "developers",
+            "level": "write"
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo/locked",
+      "namespace": "demo",
+      "name": "locked",
+      "displayName": "locked",
+      "source": "annotation",
+      "owner": {
+        "kind": "Deployment",
+        "name": "locked",
+        "uid": "uid-locked"
+      },
+      "service": "locked",
+      "host": "locked.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "locked-env",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "readonly annotation \"yes\" is not true/false; treating the target as read-only",
+        "access annotation grants no group; nobody can use this target"
+      ],
+      "readOnly": true,
+      "access": {
+        "grants": []
+      }
+    }
+  ],
+  "problems": null
+}

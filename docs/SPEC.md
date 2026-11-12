@@ -31,7 +31,9 @@ PostgreSQL databases running in selected Kubernetes namespaces:
 | App admin | member of `authz.adminGroups` | + view audit log, discovery status, pool status for all targets |
 
 A user with no matching rule for a target does not see that target at all
-(404, not 403, to avoid enumeration).
+(404, not 403, to avoid enumeration). A target's `access` annotation replaces
+the rules for that target and its `readonly` annotation caps everyone at read
+(DISCOVERY.md §2b, ADR-022).
 
 ## 3. Architecture
 

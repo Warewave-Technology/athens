@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -299,6 +300,7 @@ func (b *builder) fromWorkload(w workload) {
 	} else {
 		t.SSLMode = b.opt.DefaultSSLMode
 		t.DisplayName = t.Name
+		b.applyAccess(&t, w.meta) // restrictions apply in automatic mode too
 	}
 	b.cands = append(b.cands, candidate{t: t, kindShort: w.kindShort, kindOrder: w.order})
 }
@@ -456,6 +458,70 @@ func (b *builder) applyCommonAnnotations(t *Target, m metav1.ObjectMeta) {
 	if strings.HasPrefix(t.SSLMode, "verify-") && t.CA == nil {
 		t.Warnings = append(t.Warnings, "sslmode "+t.SSLMode+" without a CA secret uses the system roots")
 	}
+	b.applyAccess(t, m)
+}
+
+// applyAccess reads the readonly and access annotations (ADR-022). Both fail
+// closed: an unreadable readonly value means read-only, and invalid access
+// entries are dropped rather than widened.
+func (b *builder) applyAccess(t *Target, m metav1.ObjectMeta) {
+	if v, ok := b.ann(m, "readonly"); ok {
+		switch strings.ToLower(v) {
+		case "true":
+			t.ReadOnly = true
+		case "false", "":
+		default:
+			t.ReadOnly = true
+			t.Warnings = append(t.Warnings, fmt.Sprintf("readonly annotation %q is not true/false; treating the target as read-only", v))
+		}
+	}
+	v, ok := b.ann(m, "access")
+	if !ok {
+		return
+	}
+	p, warnings := ParseAccess(v)
+	t.Access = &p
+	t.Warnings = append(t.Warnings, warnings...)
+	if len(p.Grants) == 0 {
+		t.Warnings = append(t.Warnings, "access annotation grants no group; nobody can use this target")
+	}
+}
+
+// ParseAccess parses "group:rw,other:ro" (comma or whitespace separated;
+// rw|write, ro|read). The last ":" separates the level, so group names may
+// contain colons. A group listed twice gets the higher level.
+func ParseAccess(v string) (AccessPolicy, []string) {
+	var warnings []string
+	levels := map[string]string{}
+	var order []string
+	for _, e := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) }) {
+		i := strings.LastIndex(e, ":")
+		if i <= 0 {
+			warnings = append(warnings, fmt.Sprintf("access entry %q ignored: expected group:rw or group:ro", e))
+			continue
+		}
+		group, lvl := e[:i], ""
+		switch strings.ToLower(e[i+1:]) {
+		case "rw", "write":
+			lvl = "write"
+		case "ro", "read":
+			lvl = "read"
+		default:
+			warnings = append(warnings, fmt.Sprintf("access entry %q ignored: level must be rw or ro", e))
+			continue
+		}
+		if prev, seen := levels[group]; !seen {
+			order = append(order, group)
+		} else if prev == "write" {
+			continue
+		}
+		levels[group] = lvl
+	}
+	p := AccessPolicy{Grants: []AccessGrant{}}
+	for _, g := range order {
+		p.Grants = append(p.Grants, AccessGrant{Group: g, Level: levels[g]})
+	}
+	return p, warnings
 }
 
 // ---- annotated Service ----

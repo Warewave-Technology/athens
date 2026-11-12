@@ -210,6 +210,7 @@ function AuditView() {
 
 interface DiscoveryResp {
   synced: boolean;
+  annotationAccess: boolean;
   namespaces: {
     namespace: string;
     lastRebuild: string;
@@ -233,8 +234,34 @@ interface DiscoveryResp {
     environment?: string;
     defaultDB?: string;
     ro?: unknown;
+    readOnly?: boolean;
+    access?: { grants: { group: string; level: "read" | "write" }[] };
     warnings?: string[];
   }[];
+}
+
+function AccessCell({ t, honored }: { t: DiscoveryResp["targets"][number]; honored: boolean }) {
+  const grants = honored ? t.access?.grants : undefined;
+  return (
+    <div className="access-cell">
+      {t.readOnly && <span className="badge env-production">read-only</span>}
+      {grants ? (
+        grants.length ? (
+          grants.map((g) => (
+            <span key={g.group} className={"badge level-" + g.level} title={g.group}>
+              {g.group} · {g.level === "write" ? "rw" : "ro"}
+            </span>
+          ))
+        ) : (
+          <span className="error-text">nobody</span>
+        )
+      ) : (
+        <span className="muted">
+          config rules{t.access ? " (annotation ignored: authz.annotationAccess is off)" : ""}
+        </span>
+      )}
+    </div>
+  );
 }
 
 const sourceLabel: Record<string, string> = {
@@ -304,6 +331,7 @@ function DiscoveryView() {
               <th>Endpoint</th>
               <th>TLS</th>
               <th>Environment</th>
+              <th>Access</th>
               <th>Read-only role</th>
               <th>Warnings</th>
             </tr>
@@ -325,6 +353,9 @@ function DiscoveryView() {
                 <td>{t.sslMode}</td>
                 <td>
                   <EnvBadge env={t.environment ?? ""} />
+                </td>
+                <td>
+                  <AccessCell t={t} honored={q.data.annotationAccess} />
                 </td>
                 <td>{t.ro ? "Yes" : <span className="muted">No</span>}</td>
                 <td className="warn-cell">

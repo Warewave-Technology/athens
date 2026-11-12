@@ -53,6 +53,8 @@ func TestResolveFixtures(t *testing.T) {
 		"demo/scratchpad":            {"app", "scratchpad-app-pw"},
 		"demo/acid-ledger":           {"ledger", "ledger-pw"},
 		"demo/acid-unlisted":         {"app", "unlisted-pw"},
+		"demo/crm":                   {"postgres", "crm-pw"},
+		"demo/locked":                {"postgres", "locked-pw"},
 	}
 	wantDB := map[string]string{"demo/orders-db": "orders", "demo/inventory": "inventory", "demo/files": "filer", "demo/pg": "appdb"}
 	// automatic mode, so every fixture pattern yields a target to resolve

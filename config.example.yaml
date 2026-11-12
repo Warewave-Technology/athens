@@ -26,6 +26,10 @@ auth:
 
 authz:
   readOnly: false                          # global kill switch: everyone gets read
+  annotationAccess: true                   # <prefix>/access annotations replace the rules for their target
+  groupAliases:                            # names usable in access annotations -> Entra group IDs
+    system-admins: "<GROUP_ID_PLATFORM_ADMINS>"
+    developers: "<GROUP_ID_PAYMENTS_DEV>"
   adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]
   rules:                                   # effective level = max of matching rules
     - name: dba-all

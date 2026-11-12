@@ -148,3 +148,36 @@ func TestGridWritesProductionConfirm(t *testing.T) {
 		t.Fatalf("confirmed: %d %s", r.status, r.body)
 	}
 }
+
+// TestTargetAccessAnnotations: the readonly and access annotations are
+// enforced server-side for grid writes and the editor (ADR-022).
+func TestTargetAccessAnnotations(t *testing.T) {
+	in := instances[0]
+	h, _ := dbHarness(t, in, func(tg *discovery.Target) {
+		tg.ReadOnly = true
+		tg.Access = &discovery.AccessPolicy{Grants: []discovery.AccessGrant{
+			{Group: "system-admins", Level: "write"}, {Group: "developers", Level: "read"},
+		}}
+	})
+	// writers had write through the config rules; the access annotation
+	// replaces them, so they lose the target entirely
+	if r := h.login("w@example.com", "writers").get(dbPath + "/schemas"); r.status != 404 {
+		t.Fatalf("writers via rules: %d", r.status)
+	}
+	// system-admins get rw from the annotation, capped to read by readonly
+	sa := h.login("sa@example.com", "system-admins")
+	var out struct{ Targets []targetJSON }
+	sa.get("/api/v1/targets").json(t, &out)
+	if len(out.Targets) != 1 || out.Targets[0].Level != "read" {
+		t.Fatalf("targets %+v", out.Targets)
+	}
+	if r := sa.do(http.MethodPost, rowsPath, map[string]any{"values": map[string]any{"email": "x@y"}}); r.status != 403 {
+		t.Fatalf("grid insert on readonly target: %d %s", r.status, r.body)
+	}
+	if r := run(sa, "update shop.orders set status = 'paid' where id = 1", nil); r.status != 403 || r.errCode() != "forbidden_statement" {
+		t.Fatalf("editor dml on readonly target: %d %s", r.status, r.body)
+	}
+	if r := run(h.login("d@example.com", "developers"), "select count(*) from shop.orders", nil); r.status != 200 {
+		t.Fatalf("developers read: %d %s", r.status, r.body)
+	}
+}

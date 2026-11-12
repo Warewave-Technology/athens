@@ -252,6 +252,65 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("access annotations", func(t *testing.T) {
+		rc, err := rest.InClusterConfig()
+		if err != nil {
+			t.Skip("not in cluster:", err)
+		}
+		k := kubernetes.NewForConfigOrDie(rc)
+		ns := os.Getenv("E2E_NAMESPACE")
+		ctx := context.Background()
+		labels := map[string]string{"app": "access-db"}
+		// readonly + an access list naming only the readers group (ADR-022)
+		sts := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "access-db", Annotations: map[string]string{
+				"athens.warewave.io/enabled": "true", "athens.warewave.io/secret": "access-db",
+				"athens.warewave.io/readonly": "true", "athens.warewave.io/access": "e2e-readers:rw",
+			}},
+			Spec: appsv1.StatefulSetSpec{
+				Replicas: new(int32), Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pg", Image: "postgres:16-alpine"}}}},
+			},
+		}
+		svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "access-db"},
+			Spec: corev1.ServiceSpec{Selector: labels, Ports: []corev1.ServicePort{{Port: 5432}}}}
+		_ = k.AppsV1().StatefulSets(ns).Delete(ctx, "access-db", metav1.DeleteOptions{})
+		_ = k.CoreV1().Services(ns).Delete(ctx, "access-db", metav1.DeleteOptions{})
+		if _, err := k.CoreV1().Services(ns).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := k.AppsV1().StatefulSets(ns).Create(ctx, sts, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			_ = k.AppsV1().StatefulSets(ns).Delete(ctx, "access-db", metav1.DeleteOptions{})
+			_ = k.CoreV1().Services(ns).Delete(ctx, "access-db", metav1.DeleteOptions{})
+		}()
+		waitFor(t, 10*time.Second, "access-db added", func() bool { _, ok := discovered(admin)["athens-demo/access-db"]; return ok })
+		level := func(s *session) string {
+			var ts struct {
+				Targets []struct{ ID, Level string }
+			}
+			s.do(http.MethodGet, "/targets", nil, &ts)
+			for _, x := range ts.Targets {
+				if x.ID == "athens-demo/access-db" {
+					return x.Level
+				}
+			}
+			return "none"
+		}
+		if got := level(reader); got != "read" {
+			t.Fatalf("reader (rw in annotation, readonly target): %s", got)
+		}
+		if got := level(writer); got != "none" {
+			t.Fatalf("writer (write by rules, not in the access list): %s", got)
+		}
+		if code := writer.do(http.MethodGet, tpath("athens-demo/access-db")+"/databases", nil, nil); code != 404 {
+			t.Fatalf("writer databases: %d", code)
+		}
+	})
+
 	t.Run("visibility", func(t *testing.T) {
 		var ts struct{ Targets []target }
 		reader.do(http.MethodGet, "/targets", nil, &ts)

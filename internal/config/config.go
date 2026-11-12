@@ -88,6 +88,12 @@ type Authz struct {
 	ReadOnly    bool     `yaml:"readOnly"`
 	AdminGroups []string `yaml:"adminGroups"`
 	Rules       []Rule   `yaml:"rules"`
+	// AnnotationAccess lets the <prefix>/access annotation replace the rules
+	// for its target (ADR-022). The readonly annotation always applies.
+	AnnotationAccess bool `yaml:"annotationAccess"`
+	// GroupAliases maps names usable in access annotations to Entra group
+	// IDs, e.g. {"system-admins": "3f2a..."}.
+	GroupAliases map[string]string `yaml:"groupAliases"`
 }
 
 type Rule struct {
@@ -173,7 +179,8 @@ func Default() Config {
 				TokenFile: "/var/run/secrets/azure/tokens/azure-identity-token", // #nosec G101 -- file path
 			},
 		},
-		Auth: Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
+		Auth:  Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
+		Authz: Authz{AnnotationAccess: true},
 		Discovery: Discovery{
 			Resync:            Duration(10 * time.Minute),
 			ClusterDomain:     "cluster.local",
@@ -393,6 +400,12 @@ func (c *Config) Validate() error {
 			if _, err := path.Match(g, ""); err != nil {
 				add("%s: invalid glob %q", where, g)
 			}
+		}
+	}
+
+	for name, id := range c.Authz.GroupAliases {
+		if name == "" || id == "" || strings.ContainsAny(name, ":, \t") {
+			add("authz.groupAliases: %q -> %q: names must be non-empty without ':', ',' or spaces, IDs non-empty", name, id)
 		}
 	}
 

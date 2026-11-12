@@ -86,6 +86,22 @@ type Target struct {
 	RO            *CredentialRef    `json:"ro,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	Warnings      []string          `json:"warnings,omitempty"`
+	// ReadOnly caps every user at read access (<prefix>/readonly, ADR-022).
+	ReadOnly bool `json:"readOnly,omitempty"`
+	// Access, when set, replaces the config rules for this target
+	// (<prefix>/access, ADR-022). An empty policy grants nobody.
+	Access *AccessPolicy `json:"access,omitempty"`
+}
+
+// AccessPolicy lists who may use a target, from the access annotation.
+type AccessPolicy struct {
+	Grants []AccessGrant `json:"grants"`
+}
+
+// AccessGrant gives an Entra group (ID or authz.groupAliases name) a level.
+type AccessGrant struct {
+	Group string `json:"group"`
+	Level string `json:"level"` // read | write
 }
 
 // Problem is a discovery issue that did not produce a target (or was

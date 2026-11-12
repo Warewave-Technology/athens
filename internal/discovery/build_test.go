@@ -60,6 +60,8 @@ func TestAnnotationOnly(t *testing.T) {
 		"demo/legacy=annotation",    // annotated StatefulSet
 		"demo/billing=cnpg",         // annotated CNPG Cluster
 		"demo/acid-ledger=zalando",  // annotated Zalando postgresql
+		"demo/crm=annotation",       // readonly + access
+		"demo/locked=annotation",    // empty access
 	}
 	if strings.Join(sorted(got), ",") != strings.Join(sorted(want), ",") {
 		t.Fatalf("annotation-only targets = %v, want %v", got, want)
@@ -180,5 +182,21 @@ func TestFQDN(t *testing.T) {
 	targets, _ := Build(Objects{Namespace: "demo", StatefulSets: set.StatefulSets, Services: set.Services}, opt)
 	if len(targets) != 1 || targets[0].Host != "pg.demo.svc.cluster.local" {
 		t.Fatalf("targets = %+v", targets)
+	}
+}
+
+func TestParseAccess(t *testing.T) {
+	p, warnings := ParseAccess("system-admins:rw, developers:ro,bad developers:rw qa:admin a:b:ro dba:RO;ops:write ops:ro")
+	got, _ := json.Marshal(p.Grants)
+	want := `[{"group":"system-admins","level":"write"},{"group":"developers","level":"write"},{"group":"a:b","level":"read"},` +
+		`{"group":"dba","level":"read"},{"group":"ops","level":"write"}]`
+	if string(got) != want {
+		t.Fatalf("grants %s", got)
+	}
+	if len(warnings) != 2 || !strings.Contains(warnings[0], `"bad"`) || !strings.Contains(warnings[1], `"qa:admin"`) {
+		t.Fatalf("warnings %v", warnings)
+	}
+	if p, _ := ParseAccess(" "); p.Grants == nil || len(p.Grants) != 0 {
+		t.Fatal("blank annotation must give an empty, non-nil policy")
 	}
 }
