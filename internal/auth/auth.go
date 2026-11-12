@@ -186,7 +186,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	b, _ := json.Marshal(st)
 	// #nosec G124 -- Secure is false only with server.insecureDev
 	http.SetCookie(w, &http.Cookie{
-		Name: version.AuthCookie, Value: seal(a.aead, b, []byte(version.AuthCookie)), Path: "/auth/",
+		Name: a.authCookie(), Value: seal(a.aead, b, []byte(version.AuthCookie)), Path: "/auth/",
 		MaxAge: int(loginStateTTL.Seconds()), HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, oc.AuthCodeURL(st.State, oidc.Nonce(st.Nonce), oauth2.S256ChallengeOption(st.Verifier)), http.StatusFound)
@@ -215,11 +215,18 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := reqctx.WithMeta(r.Context(), a.meta(r))
 	q := r.URL.Query()
 	// #nosec G124 -- Secure is false only with server.insecureDev
-	clearAuth := &http.Cookie{Name: version.AuthCookie, Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode}
+	clearAuth := &http.Cookie{Name: a.authCookie(), Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode}
 
 	st, err := a.readState(r)
 	if err != nil {
-		a.deny(ctx, "invalid_state", "")
+		if _, cerr := r.Cookie(a.authCookie()); cerr != nil {
+			// No sign-in in progress (a bookmarked or forged callback): not
+			// worth an audit record, which anonymous requests could flood.
+			metrics.AuthLogins.WithLabelValues("denied").Inc()
+			a.log.Debug("callback without sign-in state")
+		} else {
+			a.deny(ctx, "invalid_state", "")
+		}
 		http.SetCookie(w, clearAuth)
 		a.errorPage(w, http.StatusBadRequest, "Your sign-in attempt expired or is invalid. Please sign in again.")
 		return
@@ -288,6 +295,10 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		a.errorPage(w, http.StatusInternalServerError, "Sign-in failed due to an internal error.")
 		return
 	}
+	// A new sign-in replaces the browser's previous session.
+	if c, err := r.Cookie(a.SessionCookie()); err == nil && c.Value != "" {
+		_ = a.store.DeleteSession(ctx, hashToken(c.Value))
+	}
 	cookie, csrf, err := a.StartSession(ctx, user)
 	if err != nil {
 		a.log.Error("create session", "err", err)
@@ -318,9 +329,9 @@ func (a *Authenticator) setSessionCookies(w http.ResponseWriter, cookie, csrf st
 	// Secure is false only with server.insecureDev (plain-http local development).
 	// The CSRF cookie must be readable by the SPA (double submit, SPEC §5.4).
 	// #nosec G124
-	http.SetCookie(w, &http.Cookie{Name: version.SessionCookie, Value: cookie, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: a.SessionCookie(), Value: cookie, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode})
 	// #nosec G124 -- see above
-	http.SetCookie(w, &http.Cookie{Name: version.CSRFCookie, Value: csrf, Path: "/", MaxAge: maxAge, HttpOnly: false, Secure: a.secure, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: a.csrfCookie(), Value: csrf, Path: "/", MaxAge: maxAge, HttpOnly: false, Secure: a.secure, SameSite: http.SameSiteLaxMode})
 }
 
 func (a *Authenticator) userFromClaims(c idClaims) (*reqctx.User, error) {
@@ -371,7 +382,7 @@ func (a *Authenticator) deny(ctx context.Context, reason, idpError string) {
 }
 
 func (a *Authenticator) readState(r *http.Request) (*loginState, error) {
-	c, err := r.Cookie(version.AuthCookie)
+	c, err := r.Cookie(a.authCookie())
 	if err != nil {
 		return nil, err
 	}
@@ -413,10 +424,24 @@ func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Authenticator) clearSessionCookies(w http.ResponseWriter) {
-	for _, n := range []string{version.SessionCookie, version.CSRFCookie} {
+	for _, n := range []string{a.SessionCookie(), a.csrfCookie()} {
 		// #nosec G124 -- expiring cookies; flags mirror the ones set at login
-		http.SetCookie(w, &http.Cookie{Name: n, Path: "/", MaxAge: -1, HttpOnly: n == version.SessionCookie, Secure: a.secure, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: n, Path: "/", MaxAge: -1, HttpOnly: n == a.SessionCookie(), Secure: a.secure, SameSite: http.SameSiteLaxMode})
 	}
+}
+
+// Cookie names carry the __Host- prefix (Secure, Path=/, no Domain) so a
+// sibling subdomain cannot plant them; the sign-in state cookie is scoped to
+// /auth/ and uses __Secure-. Plain names only with server.insecureDev.
+func (a *Authenticator) SessionCookie() string { return a.prefixed("__Host-", version.SessionCookie) }
+func (a *Authenticator) csrfCookie() string    { return a.prefixed("__Host-", version.CSRFCookie) }
+func (a *Authenticator) authCookie() string    { return a.prefixed("__Secure-", version.AuthCookie) }
+
+func (a *Authenticator) prefixed(prefix, name string) string {
+	if a.secure {
+		return prefix + name
+	}
+	return name
 }
 
 func (a *Authenticator) meta(r *http.Request) reqctx.Meta {

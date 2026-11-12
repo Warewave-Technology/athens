@@ -55,6 +55,10 @@ func main() {
 		os.Exit(2)
 	}
 	log := newLogger(cfg.Log.Level)
+	if *dev && !cfg.Server.InsecureDev {
+		log.Error("--dev relaxes the Content-Security-Policy and is only allowed with server.insecureDev")
+		os.Exit(2)
+	}
 	if err := run(cfg, *dev, *devURL, *kubeconfig, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
@@ -125,8 +129,13 @@ func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logg
 	})
 
 	servers := []*http.Server{
-		{Addr: cfg.Server.Listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second},
-		{Addr: cfg.Server.MetricsListen, Handler: metricsMux(), ReadHeaderTimeout: 10 * time.Second},
+		// Request bodies are at most 1 MiB; a slow client may not hold a
+		// connection open for longer than ReadTimeout. Responses (long
+		// queries) are bounded by statement_timeout, not a write timeout.
+		{Addr: cfg.Server.Listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second,
+			IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10},
+		{Addr: cfg.Server.MetricsListen, Handler: metricsMux(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+			MaxHeaderBytes: 64 << 10},
 	}
 	errc := make(chan error, len(servers))
 	for _, s := range servers {

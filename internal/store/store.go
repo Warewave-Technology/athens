@@ -130,6 +130,10 @@ type Store interface {
 	GetDraft(ctx context.Context, userID, targetID, database string) (*Draft, error)
 	PutDraft(ctx context.Context, userID, targetID, database, sql string) (*Draft, error)
 
+	// UserItemCounts counts a user's saved queries, drafts and UI state keys
+	// (per-user caps).
+	UserItemCounts(ctx context.Context, userID string) (saved, drafts, uiState int, err error)
+
 	GetUIState(ctx context.Context, userID, key string) (string, error)
 	PutUIState(ctx context.Context, userID, key, valueJSON string) error
 

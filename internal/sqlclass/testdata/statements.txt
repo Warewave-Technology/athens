@@ -42,7 +42,7 @@ dml n | update orders o set status = 'x' from customers c where c.id = o.custome
 dml n | delete from orders where id = 1
 dml n | delete from orders where id in (select id from old)
 dml n | delete from orders where current of c
-dml n | merge into orders t using staging s on t.id = s.id when matched then update set status = s.status
+dml y | merge into orders t using staging s on t.id = s.id when matched then update set status = s.status
 dml n | with d as (delete from orders where id = 1 returning *) select * from d
 dml n | with u as (update orders set status = 'x' where id = 2 returning id) select count(*) from u
 dml n | with i as (insert into log values (1) returning *) select 1

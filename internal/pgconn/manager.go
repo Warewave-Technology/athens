@@ -98,7 +98,10 @@ type targetState struct {
 	// per target (ADR-026). "" after the check means no usable role.
 	readRole        string
 	readRoleChecked bool
-	running         map[*runHandle]struct{}
+	// rwPrivileged: the RW login is a superuser or has REPLICATION or
+	// BYPASSRLS; a role switch on it is not a boundary (ADR-027).
+	rwPrivileged bool
+	running      map[*runHandle]struct{}
 }
 
 type runHandle struct{ cancel context.CancelFunc }
@@ -143,6 +146,9 @@ type Request struct {
 	ReadOnly bool
 	// Reset runs DISCARD ALL after the transaction (SQL editor, ADR-011).
 	Reset bool
+	// UserSQL marks SQL written by the user (SQL editor). Read users may not
+	// run it on a privileged RW login (ADR-027).
+	UserSQL bool
 	// Notices receives NOTICE/WARNING messages raised during fn.
 	Notices *[]Notice
 }
@@ -275,7 +281,9 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 		}
 	}()
 	l := m.opt.Limits
-	if _, err = tx.Exec(ctx, `SELECT set_config('application_name', $1, true), set_config('statement_timeout', $2, true),
+	// standard_conforming_strings: the server must tokenize string literals
+	// like the classifier's parser does.
+	if _, err = tx.Exec(ctx, `SELECT set_config('standard_conforming_strings', 'on', true), set_config('application_name', $1, true), set_config('statement_timeout', $2, true),
 		set_config('lock_timeout', $3, true), set_config('idle_in_transaction_session_timeout', $4, true)`,
 		AppName(req.Email), ms(l.StatementTimeout.D()), ms(l.LockTimeout.D()), ms(2*l.StatementTimeout.D())); err != nil {
 		return classify(ctx, err)
@@ -283,6 +291,9 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 	if dropRole {
 		if err = m.setReadRole(ctx, tx, req.Target); err != nil {
 			return classify(ctx, err)
+		}
+		if req.UserSQL && m.privilegedRW(req.Target.ID) {
+			return ErrReadLoginRequired
 		}
 	}
 	if err = fn(ctx, tx); err != nil {
@@ -326,6 +337,10 @@ func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target
 		return nil
 	}
 
+	var privileged bool
+	if err := tx.QueryRow(ctx, `SELECT rolsuper OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = session_user`).Scan(&privileged); err != nil {
+		return err
+	}
 	ok := false
 	if _, err := tx.Exec(ctx, "SAVEPOINT athens_role"); err != nil {
 		return err
@@ -351,7 +366,7 @@ func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target
 	}
 	m.mu.Lock()
 	st = m.state(t.ID)
-	st.readRoleChecked = true
+	st.readRoleChecked, st.rwPrivileged = true, privileged
 	st.readRole = ""
 	if ok {
 		st.readRole = role
@@ -359,6 +374,17 @@ func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target
 	m.mu.Unlock()
 	return nil
 }
+
+func (m *Manager) privilegedRW(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.states[id]
+	return ok && s.rwPrivileged
+}
+
+// PrivilegedRW reports, after the first read on the RW login, that the login
+// is privileged, so read users cannot use the SQL editor there (ADR-027).
+func (m *Manager) PrivilegedRW(id string) bool { return m.privilegedRW(id) }
 
 // ReadRole reports the read-only role of a target after the first read on its
 // RW login: checked is false before that; role is "" when none is usable.
@@ -399,6 +425,12 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	}
 	if err != nil && key.Database == "" && isMissingDatabase(err) {
 		conn, p, err = m.acquireFallbackDB(ctx, t, key, p.db, err)
+	}
+	if err != nil && key.Database != "" && isMissingDatabase(err) {
+		// A database name from the URL that does not exist: drop the pool
+		// at once and leave the target's status alone.
+		m.dropPool(key)
+		return nil, ErrNoDatabase
 	}
 	if err != nil {
 		m.recordError(t.ID, err)
@@ -459,6 +491,47 @@ func (m *Manager) recordOK(id string) {
 	s.status, s.checked = "ok", time.Now()
 }
 
+// maxPoolsPerTarget bounds the pools one target can hold (one per database
+// and credential kind); the least recently used idle pool makes room.
+const maxPoolsPerTarget = 32
+
+var errTooManyPools = errors.New("too many databases of this server are in use at once")
+
+func (m *Manager) dropPool(key Key) {
+	m.mu.Lock()
+	p, ok := m.pools[key]
+	delete(m.pools, key)
+	m.mu.Unlock()
+	if ok {
+		go p.p.Close()
+	}
+}
+
+// makeRoom evicts the least recently used idle pool of target id when it
+// holds maxPoolsPerTarget pools. Called with m.mu held.
+func (m *Manager) makeRoom(id string) error {
+	var n int
+	var lru *pool
+	for k, p := range m.pools {
+		if k.TargetID != id {
+			continue
+		}
+		n++
+		if p.p.Stat().AcquiredConns() == 0 && (lru == nil || p.idleSince().Before(lru.idleSince())) {
+			lru = p
+		}
+	}
+	if n < maxPoolsPerTarget {
+		return nil
+	}
+	if lru == nil {
+		return errTooManyPools
+	}
+	delete(m.pools, lru.key)
+	go lru.p.Close()
+	return nil
+}
+
 func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreate bool) (*pool, error) {
 	m.mu.Lock()
 	p, ok := m.pools[key]
@@ -467,9 +540,16 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 		go p.p.Close()
 		ok = false
 	}
+	var full error
+	if !ok {
+		full = m.makeRoom(t.ID)
+	}
 	m.mu.Unlock()
 	if ok {
 		return p, nil
+	}
+	if full != nil {
+		return nil, &ErrUnavailable{Cause: full}
 	}
 	cfg, err := m.poolConfig(ctx, t, key)
 	if err != nil {
@@ -628,7 +708,7 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 		} else {
 			s.roFailed = false
 			s.missingDB, s.fallbackDB = "", ""
-			s.readRole, s.readRoleChecked = "", false
+			s.readRole, s.readRoleChecked, s.rwPrivileged = "", false, false
 		}
 	}
 	m.mu.Unlock()
@@ -774,7 +854,9 @@ func (m *Manager) healthCheck(ctx context.Context) {
 	m.mu.Lock()
 	byTarget := map[string]*pool{}
 	for k, p := range m.pools {
-		if _, ok := byTarget[k.TargetID]; !ok {
+		// prefer the default-database pool: it reflects the target, not
+		// whichever database a user opened
+		if cur, ok := byTarget[k.TargetID]; !ok || (k.Database == "" && cur.key.Database != "") {
 			byTarget[k.TargetID] = p
 		}
 	}

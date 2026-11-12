@@ -87,6 +87,11 @@ func TestCredentialCatalogsRefused(t *testing.T) {
 		"SELECT count(*) FROM pg_user_mappings",
 		"WITH x AS (SELECT * FROM pg_catalog.pg_authid) SELECT 1 FROM x",
 		"EXPLAIN ANALYZE SELECT * FROM pg_authid",
+		"EXPLAIN SELECT * FROM pg_authid",
+		"select subname, subconninfo from pg_subscription",
+		"select * from information_schema._pg_user_mappings",
+		"select * from information_schema.user_mapping_options",
+		`select * from pg_catalog.U&"pg_shado\0077"`,
 	} {
 		r, err := Classify(sql)
 		if err != nil {
@@ -96,10 +101,59 @@ func TestCredentialCatalogsRefused(t *testing.T) {
 			t.Errorf("%s: class %s, want session (refused)", sql, r.Class)
 		}
 	}
-	// EXPLAIN without ANALYZE returns only the plan, no rows
-	for _, sql := range []string{"SELECT rolname FROM pg_roles", "SELECT * FROM myapp.pg_authid", "EXPLAIN SELECT * FROM pg_authid"} {
+	for _, sql := range []string{"SELECT rolname FROM pg_roles", "SELECT * FROM myapp.pg_authid", "SELECT * FROM myapp.pg_subscription"} {
 		if r, _ := Classify(sql); r.Class != Read {
 			t.Errorf("%s: class %s, want read", sql, r.Class)
 		}
+	}
+}
+
+// TestDynamicSQLAndServerFunctions (ADR-027): functions that run SQL given as
+// text, touch server files, replication slots or large objects are never
+// reads, wherever they appear, EXPLAIN included.
+func TestDynamicSQLAndServerFunctions(t *testing.T) {
+	for _, sql := range []string{
+		"select query_to_xml('select set_config(''role'',''none'',true)',true,true,'')",
+		"select table_to_xml('pg_authid',true,true,'')",
+		"select schema_to_xml('pg_catalog',true,true,'')",
+		"select database_to_xml(true,true,'')",
+		"select ts_stat('select to_tsvector(''simple'', rolpassword) from pg_authid')",
+		"select ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery')",
+		"select pg_read_file('/etc/hostname')",
+		"select pg_catalog.pg_ls_dir('.')",
+		"select pg_stat_file('PG_VERSION')",
+		"select pg_replication_slot_advance('s', pg_current_wal_lsn())",
+		"select pg_copy_physical_replication_slot('a','b')",
+		"select * from pg_logical_slot_get_changes('s', null, null)",
+		"select lowrite(lo_open(1, 131072), 'x')",
+		"select lo_truncate(lo_open(1, 131072), 0)",
+		"select pg_stat_statements_reset()",
+		"select pg_log_backend_memory_contexts(1)",
+		"explain select * from t where id = substr(table_to_xml('pg_authid',true,true,'')::text, 1, 5)::int",
+		"select * from (values (query_to_xml('select 1',true,true,''))) v",
+	} {
+		r, err := Classify(sql)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if r.Class == Read {
+			t.Errorf("%s: classified read", sql)
+		}
+	}
+}
+
+func TestMergeAndOrTrueAreDestructive(t *testing.T) {
+	for _, sql := range []string{
+		"merge into t using (select 1) s on true when matched then delete",
+		"delete from t where true or id = 1",
+		"update t set a = 1 where id = 2 or 1 = 1",
+	} {
+		r, err := Classify(sql)
+		if err != nil || !r.Destructive {
+			t.Errorf("%s: destructive=%v err=%v", sql, r != nil && r.Destructive, err)
+		}
+	}
+	if r, _ := Classify("delete from t where id = 1 or id = 2"); r.Destructive {
+		t.Error("a normal OR is not destructive")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -81,6 +82,10 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 	if len(in.SQL) > MaxStatementBytes {
 		return nil, apiErr(http.StatusRequestEntityTooLarge, "too_large", "statement exceeds 256 KiB")
 	}
+	if strings.ContainsRune(in.SQL, 0) {
+		// the parser stops at NUL while the server would get the full text
+		return nil, httpx.BadRequest("the statement contains a NUL character")
+	}
 	rec := store.AuditRecord{Event: audit.EventQueryExecute, TargetID: in.Target.ID, Database: in.Database, SQL: in.SQL}
 	hist := store.HistoryItem{UserID: in.User.ID, TargetID: in.Target.ID, Database: in.Database, SQL: in.SQL, CreatedAt: time.Now()}
 
@@ -146,8 +151,12 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 	}
 	out := &Output{QueryID: id, Class: cls.Class, Destructive: cls.Destructive, Notices: []pgconn.Notice{}}
 	start := time.Now()
+	// A writer's "read" may still write through a function the classifier
+	// cannot see into: run it READ ONLY unless confirmed (ADR-027).
+	readOnlyProbe := in.Level == authz.Write && cls.Class == sqlclass.Read && !in.Confirm
 	err = s.Pools.Run(qctx, pgconn.Request{
-		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true, Notices: &out.Notices,
+		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true, UserSQL: true,
+		ReadOnly: readOnlyProbe, Notices: &out.Notices,
 	}, func(ctx context.Context, tx pgx.Tx) error {
 		res, err := pgconn.QueryText(ctx, tx, cls.Statement, nil, pgconn.TextOptions{
 			MaxRows: limit, MaxCellBytes: s.Limits.MaxCellBytes, Cursor: cls.Cursorable,
@@ -163,6 +172,14 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 		return nil
 	})
 	var pe *pgxconn.PgError
+	if readOnlyProbe && errors.As(err, &pe) && pe.Code == "25006" { // read_only_sql_transaction
+		rec.Event, rec.Result, rec.StatementClass = audit.EventConfirmRequired, audit.ResultDenied, string(sqlclass.DML)
+		s.Audit.Write(ctx, rec)
+		return nil, apiErr(http.StatusConflict, "confirmation_required", "this statement writes data through a function").WithDetails(map[string]any{
+			"class": sqlclass.DML, "destructive": false, "summary": cls.Summary, "reason": "writes data through a function",
+			"environment": in.Target.Environment, "requireTypedConfirmation": in.Target.Environment == "production",
+		})
+	}
 	if errors.As(err, &pe) && pe.Position > 0 {
 		// the server saw cls.Statement; report positions in the user's text
 		pe.Position += int32(utf8.RuneCountInString(in.SQL[:cls.Offset])) // #nosec G115 -- bounded by MaxStatementBytes

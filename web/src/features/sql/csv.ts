@@ -1,7 +1,18 @@
 import type { Cell } from "../grid/gridUtil";
 
-function field(v: Cell): string {
-  if (v === null) return "";
+// Spreadsheets evaluate cells that start with = + - @ (or tab/CR) as
+// formulas; database values are untrusted, so such cells get a leading
+// apostrophe. Plain numbers such as -5 or +1.5e3 are left alone.
+const formulaStart = /^[=+\-@\t\r]/;
+const plainNumber = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/;
+
+function defuse(v: string): string {
+  return formulaStart.test(v) && !plainNumber.test(v) ? "'" + v : v;
+}
+
+function field(cell: Cell): string {
+  if (cell === null) return "";
+  const v = defuse(cell);
   return /[",\r\n]/.test(v) || v.startsWith(" ") || v.endsWith(" ")
     ? '"' + v.replace(/"/g, '""') + '"'
     : v;

@@ -49,6 +49,12 @@ func (s *Server) mapDBError(err error, sql string) error {
 	case errors.As(err, &ue):
 		s.Log.Warn("target unavailable", "err", ue.Cause)
 		return errTargetUnavailable
+	case errors.Is(err, pgconn.ErrNoDatabase):
+		return httpx.ErrNotFound
+	case errors.Is(err, pgconn.ErrReadLoginRequired):
+		return httpx.NewError(http.StatusForbidden, "read_login_required",
+			"read access to this database cannot use the SQL editor: its login is a superuser and no read-only login is configured. "+
+				"Browse the data in the grid, or ask the database owners to add the athens.warewave.io/readonly-secret annotation")
 	case errors.Is(err, pgconn.ErrTimeout):
 		return errTimeout
 	case errors.Is(err, pgconn.ErrCancelled), errors.Is(err, context.Canceled):
@@ -76,8 +82,22 @@ func (s *Server) target(r *http.Request) (discovery.Target, error) {
 	return t, nil
 }
 
+// maxIdentBytes is PostgreSQL's identifier limit (NAMEDATALEN-1): longer
+// database, schema or relation names cannot exist.
+const maxIdentBytes = 63
+
+func validIdent(s string) bool { return s != "" && len(s) <= maxIdentBytes }
+
 // targetDB resolves target + {db} and the effective level for it.
 func (s *Server) targetDB(r *http.Request) (discovery.Target, string, authz.Level, error) {
+	for _, p := range []string{"schema", "rel"} {
+		if v := r.PathValue(p); v != "" && !validIdent(v) {
+			return discovery.Target{}, "", authz.None, httpx.ErrNotFound
+		}
+	}
+	if !validIdent(r.PathValue("db")) {
+		return discovery.Target{}, "", authz.None, httpx.ErrNotFound
+	}
 	t, err := s.target(r)
 	if err != nil {
 		return t, "", authz.None, err
@@ -121,6 +141,10 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 			j.Warnings = t.Warnings
 			if s.Pools.ROFallback(t.ID) {
 				j.Warnings = append(j.Warnings, "read-only credential was rejected; using rw credential with READ ONLY transactions")
+			}
+			if s.Pools.PrivilegedRW(t.ID) && t.RO == nil {
+				j.Warnings = append(j.Warnings, "read users cannot use the SQL editor: the main login is a superuser (or has REPLICATION/BYPASSRLS) "+
+					"and there is no read-only login; add athens.warewave.io/readonly-secret")
 			}
 			if role, checked := s.Pools.ReadRole(t.ID); checked && role == "" {
 				want := t.ReadOnlyRole

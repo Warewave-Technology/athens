@@ -133,12 +133,17 @@ func classify(n *pg.Node, r *Result) {
 			classify(s.ExplainStmt.Query, r)
 			r.Cursorable = false
 			r.Summary = "EXPLAIN ANALYZE " + r.Summary
-		} else {
-			r.Class = Read
+			return
 		}
-		return
-	case *pg.Node_InsertStmt, *pg.Node_MergeStmt:
+		// Planning evaluates stable functions, so the explained query is
+		// walked below like any other (side effects, credential catalogs).
+		r.Class = Read
+	case *pg.Node_InsertStmt:
 		r.Class = DML
+	case *pg.Node_MergeStmt:
+		// MERGE can update or delete every matching row; always confirm.
+		r.Class, r.Destructive = DML, true
+		r.Summary = "MERGE INTO " + rangeVar(s.MergeStmt.Relation)
 	case *pg.Node_UpdateStmt:
 		r.Class = DML
 		if isConstant(s.UpdateStmt.WhereClause) {
@@ -225,8 +230,17 @@ func classify(n *pg.Node, r *Result) {
 	// Anything that modifies data anywhere in the tree (data-modifying CTEs,
 	// sub-statements) or calls a side-effect function makes a read a write;
 	// reading a credentials catalog is refused outright.
+	// A plain EXPLAIN only plans: data-modifying statements inside it do not
+	// run, but functions may be evaluated while planning.
+	planOnly := n.GetExplainStmt() != nil
 	credentials := ""
 	walk(n.ProtoReflect(), func(m protoreflect.Message) {
+		if planOnly {
+			switch m.Interface().(type) {
+			case *pg.InsertStmt, *pg.MergeStmt, *pg.UpdateStmt, *pg.DeleteStmt, *pg.SelectStmt:
+				return
+			}
+		}
 		switch x := m.Interface().(type) {
 		case *pg.InsertStmt, *pg.MergeStmt:
 			promote(r, "data-modifying statement inside the query")
@@ -260,14 +274,25 @@ func classify(n *pg.Node, r *Result) {
 	}
 }
 
-// sensitiveRelations are the catalogs that hold password hashes or user
-// mapping secrets. A superuser login, and pg_read_all_data, can read them,
-// so athens refuses them for everyone (editor and grid, ADR-026).
-var sensitiveRelations = map[string]bool{"pg_authid": true, "pg_shadow": true, "pg_user_mapping": true, "pg_user_mappings": true}
+// sensitiveRelations are the catalogs that hold password hashes, user mapping
+// options or subscription connection strings (with passwords). A superuser
+// login, and pg_read_all_data, can read them, so athens refuses them for
+// everyone (editor and grid, ADR-026, ADR-027). Keys are schema.name;
+// pg_catalog relations also match unqualified names.
+var sensitiveRelations = map[string]bool{
+	"pg_catalog.pg_authid": true, "pg_catalog.pg_shadow": true, "pg_catalog.pg_user_mapping": true,
+	"pg_catalog.pg_user_mappings": true, "pg_catalog.pg_subscription": true,
+	"information_schema._pg_user_mappings": true, "information_schema.user_mapping_options": true,
+	"information_schema._pg_foreign_servers": true,
+}
 
 // SensitiveRelation reports whether schema.name is a credentials catalog.
 func SensitiveRelation(schema, name string) bool {
-	return (schema == "" || schema == "pg_catalog") && sensitiveRelations[strings.ToLower(name)]
+	schema, name = strings.ToLower(schema), strings.ToLower(name)
+	if schema == "" {
+		schema = "pg_catalog"
+	}
+	return sensitiveRelations[schema+"."+name]
 }
 
 func promote(r *Result, reason string) {
@@ -308,6 +333,15 @@ func boolArg(d *pg.DefElem) bool {
 func isConstant(where *pg.Node) bool {
 	if where == nil {
 		return true
+	}
+	// "WHERE true OR id = 1" matches every row: one constant OR branch is enough.
+	if b := where.GetBoolExpr(); b != nil && b.Boolop == pg.BoolExprType_OR_EXPR {
+		for _, a := range b.Args {
+			if isConstant(a) {
+				return true
+			}
+		}
+		return false
 	}
 	constant := true
 	walk(where.ProtoReflect(), func(m protoreflect.Message) {
@@ -388,6 +422,22 @@ func funcName(f *pg.FuncCall) string {
 }
 
 var sideEffectExact = map[string]bool{
+	// run SQL given as a string: the classifier cannot see what executes
+	// (ADR-027), e.g. query_to_xml('select set_config(''role'',...)')
+	"query_to_xml": true, "query_to_xmlschema": true, "query_to_xml_and_xmlschema": true, "table_to_xml": true,
+	"table_to_xmlschema": true, "table_to_xml_and_xmlschema": true, "schema_to_xml": true, "schema_to_xmlschema": true,
+	"schema_to_xml_and_xmlschema": true, "database_to_xml": true, "database_to_xmlschema": true,
+	"database_to_xml_and_xmlschema": true, "cursor_to_xml": true, "cursor_to_xmlschema": true, "ts_stat": true,
+	"ts_rewrite": true,
+	// server files and logs
+	"pg_read_file": true, "pg_read_binary_file": true, "pg_stat_file": true, "pg_current_logfile": true,
+	"pg_log_backend_memory_contexts": true,
+	// replication slots, backups
+	"pg_replication_slot_advance": true, "pg_backup_start": true, "pg_backup_stop": true, "pg_start_backup": true,
+	"pg_stop_backup": true,
+	// large objects: writes are not blocked by READ ONLY before PostgreSQL 14
+	"lowrite": true, "lo_truncate": true, "lo_truncate64": true, "lo_open": true, "lo_close": true, "lo_lseek": true,
+	"lo_lseek64": true, "loread": true,
 	"pg_terminate_backend": true, "pg_cancel_backend": true, "pg_reload_conf": true, "pg_rotate_logfile": true,
 	"pg_switch_wal": true, "pg_create_restore_point": true, "pg_promote": true, "pg_wal_replay_pause": true,
 	"pg_wal_replay_resume": true, "pg_drop_replication_slot": true, "pg_logical_emit_message": true,
@@ -404,7 +454,9 @@ func sideEffect(name string) bool {
 	case sideEffectExact[name]:
 		return true
 	case strings.HasPrefix(name, "dblink"), strings.HasPrefix(name, "pg_replication_origin_"),
-		strings.HasPrefix(name, "pg_stat_reset"):
+		strings.HasPrefix(name, "pg_stat_reset"), strings.HasPrefix(name, "pg_ls_"),
+		strings.HasPrefix(name, "pg_logical_slot_"), strings.HasPrefix(name, "pg_copy_") && strings.HasSuffix(name, "_replication_slot"),
+		strings.HasSuffix(name, "_reset") && strings.HasPrefix(name, "pg_stat"):
 		return true
 	case strings.HasPrefix(name, "pg_create_") && strings.HasSuffix(name, "_replication_slot"):
 		return true

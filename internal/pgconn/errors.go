@@ -22,6 +22,13 @@ var ErrTimeout = errors.New("statement timeout")
 // client disconnect, target removed).
 var ErrCancelled = errors.New("cancelled")
 
+// ErrReadLoginRequired: a read user's SQL would run on a privileged RW login
+// (superuser, replication, bypassrls) without a read-only login (ADR-027).
+var ErrReadLoginRequired = errors.New("read-only login required")
+
+// ErrNoDatabase: an explicitly requested database does not exist (3D000).
+var ErrNoDatabase = errors.New("database does not exist")
+
 // isMissingDatabase reports SQLSTATE 3D000 (invalid_catalog_name).
 func isMissingDatabase(err error) bool {
 	var pe *pgconn.PgError

@@ -304,6 +304,14 @@ func (s *SQLite) GetDraft(ctx context.Context, userID, targetID, database string
 	return &d, nil
 }
 
+func (s *SQLite) UserItemCounts(ctx context.Context, userID string) (saved, drafts, uiState int, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT
+		(SELECT count(*) FROM saved_queries WHERE user_id = ?),
+		(SELECT count(*) FROM drafts WHERE user_id = ?),
+		(SELECT count(*) FROM ui_state WHERE user_id = ?)`, userID, userID, userID).Scan(&saved, &drafts, &uiState)
+	return saved, drafts, uiState, err
+}
+
 func (s *SQLite) PutDraft(ctx context.Context, userID, targetID, database, sqlText string) (*Draft, error) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO drafts(user_id, target_id, database, sql, updated_at) VALUES (?, ?, ?, ?, ?)

@@ -3,11 +3,13 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/Warewave-Technology/athens/internal/audit"
+	"github.com/Warewave-Technology/athens/internal/authz"
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/query"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
@@ -92,12 +94,33 @@ type savedQueryRequest struct {
 	Database *string `json:"database"`
 }
 
-func (q savedQueryRequest) validate() error {
+// Per-user caps on stored items (the SQLite volume is shared by everyone).
+const (
+	maxSavedQueries = 500
+	maxDrafts       = 300
+	maxUIStateKeys  = 100
+)
+
+var errLimit = func(what string, n int) error {
+	return httpx.NewError(http.StatusConflict, "limit_reached", fmt.Sprintf("you can keep at most %d %s; delete some first", n, what))
+}
+
+// validate checks a saved query; a target must be one the user can see.
+func (s *Server) validateSavedQuery(r *http.Request, q savedQueryRequest) error {
 	if strings.TrimSpace(q.Name) == "" || len(q.Name) > 200 {
 		return httpx.BadRequest("name must be 1-200 characters")
 	}
 	if q.SQL == "" || len(q.SQL) > query.MaxStatementBytes {
 		return httpx.BadRequest("sql must be 1 byte to 256 KiB")
+	}
+	if q.TargetID != nil {
+		t, ok := s.Registry.Get(*q.TargetID)
+		if !ok || s.Authz.Level(reqctx.UserFrom(r.Context()).Groups, t) == authz.None {
+			return httpx.BadRequest("targetId is not a server you can use")
+		}
+	}
+	if q.Database != nil && !validIdent(*q.Database) {
+		return httpx.BadRequest("database must be 1-63 bytes")
 	}
 	return nil
 }
@@ -116,8 +139,13 @@ func (s *Server) createSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	if err := req.validate(); err != nil {
+	if err := s.validateSavedQuery(r, req); err != nil {
 		return err
+	}
+	if saved, _, _, err := s.Store.UserItemCounts(r.Context(), reqctx.UserFrom(r.Context()).ID); err != nil {
+		return err
+	} else if saved >= maxSavedQueries {
+		return errLimit("saved queries", maxSavedQueries)
 	}
 	q, err := s.Store.CreateSavedQuery(r.Context(), store.SavedQuery{
 		UserID: reqctx.UserFrom(r.Context()).ID, Name: strings.TrimSpace(req.Name), SQL: req.SQL, TargetID: req.TargetID, Database: req.Database,
@@ -139,7 +167,7 @@ func (s *Server) updateSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		return err
 	}
-	if err := req.validate(); err != nil {
+	if err := s.validateSavedQuery(r, req); err != nil {
 		return err
 	}
 	q, err := s.Store.UpdateSavedQuery(r.Context(), store.SavedQuery{
@@ -188,7 +216,19 @@ func (s *Server) auditUserItem(r *http.Request, event string, id int64, q *store
 
 func draftTarget(r *http.Request) string { return r.PathValue("ns") + "/" + r.PathValue("name") }
 
+// draftAllowed: drafts exist only for databases of servers the user can see.
+func (s *Server) draftAllowed(r *http.Request) error {
+	if !validIdent(r.PathValue("db")) {
+		return httpx.ErrNotFound
+	}
+	_, err := s.target(r)
+	return err
+}
+
 func (s *Server) getDraft(w http.ResponseWriter, r *http.Request) error {
+	if err := s.draftAllowed(r); err != nil {
+		return err
+	}
 	d, err := s.Store.GetDraft(r.Context(), reqctx.UserFrom(r.Context()).ID, draftTarget(r), r.PathValue("db"))
 	if err != nil {
 		return mapStoreErr(err)
@@ -206,6 +246,17 @@ func (s *Server) putDraft(w http.ResponseWriter, r *http.Request) error {
 	}
 	if len(req.SQL) > query.MaxStatementBytes {
 		return httpx.NewError(http.StatusRequestEntityTooLarge, "too_large", "draft exceeds 256 KiB")
+	}
+	if err := s.draftAllowed(r); err != nil {
+		return err
+	}
+	uid := reqctx.UserFrom(r.Context()).ID
+	if _, drafts, _, err := s.Store.UserItemCounts(r.Context(), uid); err != nil {
+		return err
+	} else if drafts >= maxDrafts {
+		if _, err := s.Store.GetDraft(r.Context(), uid, draftTarget(r), r.PathValue("db")); errors.Is(err, store.ErrNotFound) {
+			return errLimit("drafts", maxDrafts)
+		}
 	}
 	d, err := s.Store.PutDraft(r.Context(), reqctx.UserFrom(r.Context()).ID, draftTarget(r), r.PathValue("db"), req.SQL)
 	if err != nil {

@@ -262,3 +262,52 @@ func TestHistorySavedDrafts(t *testing.T) {
 	}
 	_ = context.Background
 }
+
+// TestEditorSecurityBoundaries (ADR-027).
+func TestEditorSecurityBoundaries(t *testing.T) {
+	in := instances[0]
+
+	// read users on a superuser login without a read-only login: no SQL
+	// editor (a role switch is escapable there), the grid still works
+	h, _ := dbHarness(t, in, func(tg *discovery.Target) { tg.RO = nil })
+	rd := h.login("r@example.com", "readers")
+	if r := run(rd, "select 1", nil); r.status != 403 || r.errCode() != "read_login_required" {
+		t.Fatalf("editor on privileged login: %d %s", r.status, r.body)
+	}
+	if _, r := gridQuery(t, rd, "shop/customers", map[string]any{"limit": 3}); r.status != 200 {
+		t.Fatalf("grid on privileged login: %d %s", r.status, r.body)
+	}
+
+	// dynamic SQL and server functions are never reads
+	h2, _ := dbHarness(t, in, nil) // read users have the read-only login here
+	rd2 := h2.login("r@example.com", "readers")
+	for _, sql := range []string{
+		"select query_to_xml('select set_config(''role'',''none'',true)',true,true,'')",
+		"select table_to_xml('pg_authid',true,true,'')",
+		"select ts_stat('select to_tsvector(''simple'', rolpassword) from pg_authid')",
+		"select pg_read_file('PG_VERSION')",
+		"explain select * from shop.orders where id = length(table_to_xml('pg_authid',true,true,'')::text)",
+	} {
+		if r := run(rd2, sql, nil); r.status != 403 || r.errCode() != "forbidden_statement" {
+			t.Errorf("%s: %d %s", sql, r.status, r.body)
+		}
+	}
+	if r := run(rd2, "select 1\u0000; delete from shop.orders", nil); r.status != 400 {
+		t.Fatalf("NUL byte: %d", r.status)
+	}
+
+	// a writer's SELECT that writes through a function needs confirmation
+	w := h2.login("w@example.com", "writers")
+	if r := run(w, "create function shop.zz_touch() returns int language sql as $$ update shop.customers set name = name where id = 1 returning 1 $$", nil); r.status != 200 {
+		t.Fatalf("create function: %d %s", r.status, r.body)
+	}
+	if r := run(w, "select shop.zz_touch()", nil); r.status != 409 || r.errCode() != "confirmation_required" {
+		t.Fatalf("write through a function: %d %s", r.status, r.body)
+	}
+	if r := run(w, "select shop.zz_touch()", map[string]any{"confirm": true}); r.status != 200 {
+		t.Fatalf("confirmed: %d %s", r.status, r.body)
+	}
+	if r := run(w, "select count(*) from shop.customers", nil); r.status != 200 {
+		t.Fatalf("plain read by a writer: %d %s", r.status, r.body)
+	}
+}

@@ -89,6 +89,15 @@ func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 func observe(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		method := methodLabel(r.Method)
+		if method == "OTHER" {
+			// Unknown methods never reach a handler, a metric label or a log
+			// line: an attacker could otherwise mint unbounded label values.
+			metrics.HTTPRequests.WithLabelValues("unmatched", method, "405").Inc()
+			w.Header().Set("Allow", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		holder := &routeHolder{pattern: "unmatched"}
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		r = r.WithContext(context.WithValue(r.Context(), routeKey{}, holder))
@@ -103,12 +112,12 @@ func observe(log *slog.Logger, next http.Handler) http.Handler {
 				}
 			}
 			d := time.Since(start)
-			metrics.HTTPRequests.WithLabelValues(holder.pattern, r.Method, strconv.Itoa(sw.status)).Inc()
+			metrics.HTTPRequests.WithLabelValues(holder.pattern, method, strconv.Itoa(sw.status)).Inc()
 			metrics.HTTPDuration.WithLabelValues(holder.pattern).Observe(d.Seconds())
 			if holder.pattern == "GET /healthz" || holder.pattern == "GET /readyz" {
 				return
 			}
-			attrs := []any{"method", r.Method, "route", holder.pattern, "status", sw.status, "duration_ms", d.Milliseconds()}
+			attrs := []any{"method", method, "route", holder.pattern, "status", sw.status, "duration_ms", d.Milliseconds()}
 			if u := userOf(r); u != "" {
 				attrs = append(attrs, "user_id", u)
 			}
@@ -116,6 +125,16 @@ func observe(log *slog.Logger, next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(sw, r)
 	})
+}
+
+// methodLabel maps the request method to a fixed set so it is safe as a
+// metric label and log field.
+func methodLabel(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "OTHER"
 }
 
 // userOf reads the user id that LoadSession stored. LoadSession runs inside

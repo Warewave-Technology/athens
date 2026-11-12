@@ -4,6 +4,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -43,7 +44,9 @@ const (
 	ResultDenied    = "denied"
 	ResultCancelled = "cancelled"
 
-	maxSQLBytes = 8 << 10
+	maxSQLBytes    = 8 << 10
+	maxDetailBytes = 8 << 10
+	maxNameBytes   = 512 // target IDs, database and relation names
 )
 
 // Writer is safe for concurrent use.
@@ -73,6 +76,15 @@ func (w *Writer) Write(ctx context.Context, rec store.AuditRecord) {
 		rec.SQL = ""
 	}
 	rec.SQL = truncate(rec.SQL, maxSQLBytes)
+	// Every field may carry user input (path values, saved-query metadata):
+	// bound them all so records stay small (SQLite, stdout, exports).
+	rec.Event = truncate(rec.Event, 64)
+	rec.UserID, rec.Email = truncate(rec.UserID, 256), truncate(rec.Email, 320)
+	rec.ClientIP = truncate(rec.ClientIP, 64)
+	rec.TargetID, rec.Database = truncate(rec.TargetID, maxNameBytes), truncate(rec.Database, maxNameBytes)
+	rec.Object = truncate(rec.Object, 2*maxNameBytes)
+	rec.StatementClass, rec.ErrorCode = truncate(rec.StatementClass, 32), truncate(rec.ErrorCode, 64)
+	rec.Details = truncateJSON(rec.Details, maxDetailBytes)
 
 	attrs := []any{
 		"event", rec.Event, "ts", rec.TS.UTC().Format(time.RFC3339Nano), "result", rec.Result,
@@ -110,6 +122,16 @@ func (w *Writer) Write(ctx context.Context, rec store.AuditRecord) {
 		metrics.AuditWriteErrors.Inc()
 		w.log.Error("audit store write failed", "err", err, "event", rec.Event)
 	}
+}
+
+// truncateJSON keeps details valid JSON: an over-long value is replaced by a
+// JSON string holding its truncated text.
+func truncateJSON(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	b, _ := json.Marshal(map[string]string{"truncated": truncate(s, n-64)})
+	return string(b)
 }
 
 func truncate(s string, n int) string {

@@ -17,7 +17,7 @@ import (
 func (a *Authenticator) LoadSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := reqctx.WithMeta(r.Context(), a.meta(r))
-		if c, err := r.Cookie(version.SessionCookie); err == nil && c.Value != "" {
+		if c, err := r.Cookie(a.SessionCookie()); err == nil && c.Value != "" {
 			id := hashToken(c.Value)
 			s, err := a.store.GetSession(ctx, id)
 			switch {

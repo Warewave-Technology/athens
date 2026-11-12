@@ -20,6 +20,8 @@ const (
 	adminViewEvery = 5 * time.Minute
 	// maxAuditExport caps one export; narrow the filters for more.
 	maxAuditExport = 100_000
+	// exportPage is how many records an export reads from the store at once.
+	exportPage = 500
 )
 
 // requireAdmin returns 404 for non-admins (no enumeration, SPEC §2).
@@ -161,62 +163,75 @@ func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) error 
 	default:
 		return httpx.BadRequest("format must be csv or jsonl")
 	}
-	// Read everything before writing so a store error is still a clean error
-	// response.
-	var recs []store.AuditRecord
-	f.Limit = 1000
-	for len(recs) < maxAuditExport {
-		page, err := s.Store.ListAudit(r.Context(), f)
-		if err != nil {
-			return err
+	// Stream page by page: memory stays bounded however large the log is.
+	// The first page is read before any output, so a store error is still a
+	// clean error response.
+	f.Limit = exportPage
+	page, err := s.Store.ListAudit(r.Context(), f)
+	if err != nil {
+		return err
+	}
+	name := "athens-audit-" + time.Now().UTC().Format("20060102-150405") + "." + format
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Trailer", "X-Athens-Export-Capped")
+	var emit func(store.AuditRecord) error
+	var flush func()
+	if format == "jsonl" {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		enc := json.NewEncoder(w)
+		emit, flush = func(rec store.AuditRecord) error { return enc.Encode(rec) }, func() {}
+	} else {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		cw := csv.NewWriter(w)
+		_ = cw.Write(auditCSVHeader)
+		emit = func(rec store.AuditRecord) error {
+			// every string cell may hold user input: defuse them all
+			return cw.Write([]string{
+				strconv.FormatInt(rec.ID, 10), rec.TS.UTC().Format(time.RFC3339Nano), csvSafe(rec.Event), csvSafe(rec.Result),
+				csvSafe(rec.UserID), csvSafe(rec.Email), csvSafe(rec.ClientIP), csvSafe(rec.UserAgent), csvSafe(rec.TargetID),
+				csvSafe(rec.Database), csvSafe(rec.Object), csvSafe(rec.StatementClass), strconv.FormatBool(rec.Destructive),
+				csvSafe(rec.SQL), optInt(rec.RowsAffected), optInt(rec.DurationMs), csvSafe(rec.ErrorCode), csvSafe(rec.Details),
+			})
 		}
-		recs = append(recs, page...)
+		flush = cw.Flush
+	}
+
+	n, capped := 0, false
+stream:
+	for {
+		for _, rec := range page {
+			if n == maxAuditExport {
+				capped = true
+				break stream
+			}
+			if err := emit(rec); err != nil {
+				break stream // the client went away
+			}
+			n++
+		}
 		if len(page) < f.Limit {
 			break
 		}
+		flush()
 		f.Before = page[len(page)-1].ID
+		if page, err = s.Store.ListAudit(r.Context(), f); err != nil {
+			s.Log.Error("audit export: store error mid-stream", "err", err)
+			break
+		}
 	}
-	capped := len(recs) >= maxAuditExport
+	flush()
 	if capped {
-		recs = recs[:maxAuditExport]
+		w.Header().Set("X-Athens-Export-Capped", "true")
 	}
 
-	details := map[string]any{"format": format, "records": len(recs), "capped": capped}
+	details := map[string]any{"format": format, "records": n, "capped": capped}
 	if len(used) > 0 {
 		details["filters"] = used
 	}
 	b, _ := json.Marshal(details)
-	n := int64(len(recs))
-	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventAuditExport, Result: audit.ResultOK, RowsAffected: &n, Details: string(b)})
-
-	name := "athens-audit-" + time.Now().UTC().Format("20060102-150405") + "." + format
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-	w.Header().Set("Cache-Control", "no-store")
-	if capped {
-		w.Header().Set("X-Athens-Export-Capped", "true")
-	}
-	if format == "jsonl" {
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		enc := json.NewEncoder(w)
-		for _, rec := range recs {
-			if err := enc.Encode(rec); err != nil {
-				return nil //nolint:nilerr // the client went away mid-stream
-			}
-		}
-		return nil
-	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	cw := csv.NewWriter(w)
-	_ = cw.Write(auditCSVHeader)
-	for _, rec := range recs {
-		_ = cw.Write([]string{
-			strconv.FormatInt(rec.ID, 10), rec.TS.UTC().Format(time.RFC3339Nano), rec.Event, rec.Result, rec.UserID, rec.Email,
-			rec.ClientIP, csvSafe(rec.UserAgent), rec.TargetID, rec.Database, csvSafe(rec.Object), rec.StatementClass,
-			strconv.FormatBool(rec.Destructive), csvSafe(rec.SQL), optInt(rec.RowsAffected), optInt(rec.DurationMs), rec.ErrorCode,
-			csvSafe(rec.Details),
-		})
-	}
-	cw.Flush()
+	rows := int64(n)
+	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventAuditExport, Result: audit.ResultOK, RowsAffected: &rows, Details: string(b)})
 	return nil
 }
 

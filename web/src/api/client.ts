@@ -25,7 +25,9 @@ export function readCookie(name: string): string {
   return m ? decodeURIComponent(m.slice(name.length + 1)) : "";
 }
 
-export const csrfToken = () => readCookie("athens_csrf");
+// __Host-athens_csrf in production; the plain name only in local development
+// (server.insecureDev), where cookies cannot carry the __Host- prefix.
+export const csrfToken = () => readCookie("__Host-athens_csrf") || readCookie("athens_csrf");
 
 export function loginURL(): string {
   const here = window.location.pathname + window.location.search + window.location.hash;

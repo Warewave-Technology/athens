@@ -383,8 +383,17 @@ func TestMissingDefaultDatabase(t *testing.T) {
 	}
 	// a missing explicit database is still an error, not a silent fallback
 	err := m.Run(context.Background(), pgtest.Req(tg, "nope", authz.Read), func(context.Context, pgx.Tx) error { return nil })
-	if err == nil {
-		t.Fatal("missing explicit database must fail")
+	if !errors.Is(err, athenspg.ErrNoDatabase) {
+		t.Fatalf("missing explicit database: %v", err)
+	}
+	// ... and neither keeps a pool nor marks the target unreachable (ADR-027)
+	if m.Status(tg.ID) != "ok" {
+		t.Fatalf("status after a missing database: %s", m.Status(tg.ID))
+	}
+	for _, st := range m.Stats() {
+		if st.Database == "nope" {
+			t.Fatal("pool for a missing database was kept")
+		}
 	}
 	// a target change clears the fallback
 	m.TargetChanged(discovery.Event{Type: discovery.Updated, Target: tg})

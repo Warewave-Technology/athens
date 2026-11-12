@@ -268,6 +268,29 @@ func TestMissingStateCookie(t *testing.T) {
 	if r := e.get(cb.String()); r.StatusCode != 400 {
 		t.Fatalf("status %d", r.StatusCode)
 	}
+	// no sign-in in progress: anonymous requests must not write audit rows
+	if a := e.lastAudit(audit.EventLoginDenied); a != nil {
+		t.Fatalf("callback without state cookie was audited: %+v", a)
+	}
+}
+
+func TestSecureCookieNames(t *testing.T) {
+	cfg := config.Default()
+	a := &Authenticator{secure: true, cfg: &cfg}
+	if a.SessionCookie() != "__Host-athens_session" || a.csrfCookie() != "__Host-athens_csrf" || a.authCookie() != "__Secure-athens_auth" {
+		t.Fatalf("names %s %s %s", a.SessionCookie(), a.csrfCookie(), a.authCookie())
+	}
+	rec := httptest.NewRecorder()
+	a.setSessionCookies(rec, "s", "c")
+	for _, c := range rec.Result().Cookies() {
+		// __Host- requires Secure, Path=/ and no Domain, or browsers drop it
+		if !c.Secure || c.Path != "/" || c.Domain != "" {
+			t.Fatalf("cookie %s: %+v", c.Name, c)
+		}
+	}
+	if (&Authenticator{}).SessionCookie() != version.SessionCookie {
+		t.Fatal("insecureDev keeps the plain name")
+	}
 }
 
 func TestExpiredStateCookie(t *testing.T) {
