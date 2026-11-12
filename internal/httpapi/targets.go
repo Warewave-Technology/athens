@@ -13,6 +13,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
+	"github.com/Warewave-Technology/athens/internal/query"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
 )
 
@@ -55,28 +56,11 @@ func (s *Server) mapDBError(err error, sql string) error {
 	case errors.As(err, &pe):
 		d := DBErrorDetails{SQLState: pe.Code, Message: pe.Message, Detail: pe.Detail, Hint: pe.Hint, Position: pe.Position}
 		if pe.Position > 0 && sql != "" {
-			d.Line, d.Column = lineCol(sql, int(pe.Position))
+			d.Line, d.Column = query.LineCol(sql, int(pe.Position))
 		}
 		return httpx.NewError(http.StatusUnprocessableEntity, "db_error", pe.Message).WithDetails(d)
 	}
 	return err
-}
-
-// lineCol converts a 1-based character (rune) position into line/column.
-func lineCol(sql string, pos int) (int, int) {
-	line, col, i := 1, 1, 0
-	for _, r := range sql {
-		i++
-		if i >= pos {
-			break
-		}
-		if r == '\n' {
-			line, col = line+1, 1
-		} else {
-			col++
-		}
-	}
-	return line, col
 }
 
 // target resolves {ns}/{name} for the current user; unknown or invisible

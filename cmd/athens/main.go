@@ -29,6 +29,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/httpapi"
 	"github.com/Warewave-Technology/athens/internal/metrics"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
+	"github.com/Warewave-Technology/athens/internal/query"
 	"github.com/Warewave-Technology/athens/internal/store"
 	"github.com/Warewave-Technology/athens/internal/version"
 	"github.com/Warewave-Technology/athens/web"
@@ -119,7 +120,8 @@ func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logg
 	}
 	srv := httpapi.New(httpapi.Deps{
 		Config: cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, Registry: registry, Pools: pools,
-		SPA: spa, Dev: dev, Ready: disc.Synced,
+		Query: &query.Service{Pools: pools, Store: st, Audit: aw, Limits: cfg.Limits, Registry: query.NewRegistry(), Log: log},
+		SPA:   spa, Dev: dev, Ready: disc.Synced,
 	})
 
 	servers := []*http.Server{

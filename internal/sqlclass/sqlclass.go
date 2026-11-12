@@ -29,6 +29,8 @@ type Result struct {
 	Summary     string `json:"summary"`
 	// Statement is the exact text of the single statement (no trailing ;).
 	Statement string `json:"-"`
+	// Offset is the byte offset of Statement within the input.
+	Offset int `json:"-"`
 	// Cursorable is true for plain row-returning reads that may be wrapped in
 	// DECLARE CURSOR (SELECT/VALUES/TABLE without INTO or locking).
 	Cursorable bool `json:"-"`
@@ -63,8 +65,8 @@ func Classify(sql string) (*Result, error) {
 		return nil, ErrMultiple
 	}
 	raw := tree.Stmts[0]
-	stmt := statementText(sql, raw)
-	r := &Result{Statement: stmt}
+	stmt, off := statementText(sql, raw)
+	r := &Result{Statement: stmt, Offset: off}
 	classify(raw.Stmt, r)
 	if r.Summary == "" {
 		r.Summary = shorten(stmt)
@@ -86,16 +88,19 @@ func cursorPos(err error) int {
 	return 0
 }
 
-func statementText(sql string, raw *pg.RawStmt) string {
+func statementText(sql string, raw *pg.RawStmt) (string, int) {
 	start := int(raw.StmtLocation)
 	end := len(sql)
 	if raw.StmtLen > 0 {
 		end = start + int(raw.StmtLen)
 	}
 	if start < 0 || start > len(sql) || end > len(sql) || start > end {
-		return strings.TrimSpace(sql)
+		start, end = 0, len(sql)
 	}
-	return strings.TrimRight(strings.TrimSpace(sql[start:end]), "; \t\r\n")
+	seg := sql[start:end]
+	trimmed := strings.TrimLeft(seg, " \t\r\n")
+	start += len(seg) - len(trimmed)
+	return strings.TrimRight(trimmed, "; \t\r\n"), start
 }
 
 var spaces = regexp.MustCompile(`\s+`)

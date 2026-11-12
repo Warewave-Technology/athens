@@ -2,9 +2,11 @@ package pgconn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Column describes one result column.
@@ -86,8 +88,13 @@ func execText(ctx context.Context, tx pgx.Tx, sql string, params []*string, o Te
 const cursorName = "athens_result"
 
 func cursorText(ctx context.Context, tx pgx.Tx, sql string, params []*string, o TextOptions) (*TextResult, error) {
-	if _, err := tx.Conn().PgConn().ExecParams(ctx, "DECLARE "+cursorName+" NO SCROLL CURSOR FOR "+sql,
-		encodeParams(params), o.ParamOIDs, nil, nil).Close(); err != nil {
+	prefix := "DECLARE " + cursorName + " NO SCROLL CURSOR FOR "
+	if _, err := tx.Conn().PgConn().ExecParams(ctx, prefix+sql, encodeParams(params), o.ParamOIDs, nil, nil).Close(); err != nil {
+		// report positions relative to the caller's statement
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) && int(pe.Position) > len(prefix) {
+			pe.Position -= int32(len(prefix)) // #nosec G115 -- short constant prefix
+		}
 		return nil, err
 	}
 	fetch := o

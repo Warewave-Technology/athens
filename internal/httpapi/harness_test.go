@@ -22,6 +22,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/credentials"
 	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
+	"github.com/Warewave-Technology/athens/internal/query"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
 	"github.com/Warewave-Technology/athens/internal/store"
 	"github.com/Warewave-Technology/athens/internal/version"
@@ -99,8 +100,9 @@ func newHarness(t *testing.T, o harnessOpts) *harness {
 	pools := pgconn.NewManager(pgconn.Options{Targets: reg, Resolver: credentials.NewResolver(client, nil), Limits: cfg.Limits, Log: log})
 	reg.OnChange(pools.TargetChanged)
 	t.Cleanup(pools.CloseAll)
+	qs := &query.Service{Pools: pools, Store: st, Audit: aw, Limits: cfg.Limits, Registry: query.NewRegistry(), Log: log}
 	s := New(Deps{Config: &cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, Registry: reg, Pools: pools,
-		SPA: http.NotFoundHandler()})
+		Query: qs, SPA: http.NotFoundHandler()})
 	h := &harness{t: t, store: st, registry: reg, pools: pools, authn: authn, cfg: &cfg, server: s}
 	h.srv = httptest.NewServer(s.Handler())
 	t.Cleanup(h.srv.Close)
@@ -174,7 +176,6 @@ func (c *client) do(method, path string, body any) response {
 
 func (c *client) get(path string) response { return c.do(http.MethodGet, path, nil) }
 
-//nolint:unused // used by integration tests (build tag)
 func (h *harness) audits(event string) []store.AuditRecord {
 	recs, err := h.store.ListAudit(context.Background(), store.AuditFilter{Event: event, Limit: 100})
 	if err != nil {

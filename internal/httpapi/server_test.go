@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Warewave-Technology/athens/internal/discovery"
+	"github.com/Warewave-Technology/athens/internal/query"
 )
 
 func TestSecurityHeadersAndHealth(t *testing.T) {
@@ -98,7 +99,7 @@ func TestTargetsVisibility(t *testing.T) {
 
 func TestLineCol(t *testing.T) {
 	sql := "select 1,\n  é bad"
-	if l, c := lineCol(sql, 13); l != 2 || c != 3 { // position 13 is "é"
+	if l, c := query.LineCol(sql, 13); l != 2 || c != 3 { // position 13 is "é"
 		t.Fatalf("got %d:%d", l, c)
 	}
 }

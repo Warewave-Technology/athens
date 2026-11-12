@@ -15,6 +15,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/pgconn"
+	"github.com/Warewave-Technology/athens/internal/query"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
 	"github.com/Warewave-Technology/athens/internal/store"
 	"github.com/Warewave-Technology/athens/internal/version"
@@ -32,6 +33,7 @@ type Deps struct {
 	Audit    *audit.Writer
 	Registry *discovery.Registry
 	Pools    *pgconn.Manager
+	Query    *query.Service
 	SPA      http.Handler
 	// Dev relaxes the CSP for the Vite dev server (--dev).
 	Dev bool
@@ -106,6 +108,16 @@ func (s *Server) routes() {
 	s.handle("GET "+db+"/relations/{schema}/{rel}/structure", s.structure)
 	s.handle("POST "+db+"/relations/{schema}/{rel}/rows/query", s.rowsQuery)
 	s.handle("GET "+db+"/relations/{schema}/{rel}/rows/cell", s.rowsCell)
+	s.handle("POST "+db+"/query", s.executeQuery)
+	s.handle("POST /queries/{id}/cancel", s.cancelQuery)
+	s.handle("GET /history", s.listHistory)
+	s.handle("DELETE /history/{id}", s.deleteHistory)
+	s.handle("GET /saved-queries", s.listSavedQueries)
+	s.handle("POST /saved-queries", s.createSavedQuery)
+	s.handle("PUT /saved-queries/{id}", s.updateSavedQuery)
+	s.handle("DELETE /saved-queries/{id}", s.deleteSavedQuery)
+	s.handle("GET /drafts/{ns}/{name}/{db}", s.getDraft)
+	s.handle("PUT /drafts/{ns}/{name}/{db}", s.putDraft)
 	s.handle("GET /ui-state/{key}", s.getUIState)
 	s.handle("PUT /ui-state/{key}", s.putUIState)
 	s.handle("GET /version", func(w http.ResponseWriter, _ *http.Request) error {
