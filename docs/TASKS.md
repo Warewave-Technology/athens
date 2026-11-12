@@ -63,11 +63,11 @@ tx verified by integration test); rotated secret password → next request
 succeeds after one retry.
 
 ## M4 — Data grid (read)
-- [ ] `internal/rows`: query builder for filters/sort/pagination (SPEC §8), identifier sanitizing, column validation, text-cast binds; golden SQL tests
-- [ ] TEXT result format for all columns (ADR-004), cell truncation, cell endpoint
-- [ ] Row count estimate / exact with 5s timeout
-- [ ] Frontend grid component (shared with SQL results): virtualization, NULL rendering, truncated-cell loader, sort, filter builder, pagination, row side panel (view only), column resize, copy cell/row
-- [ ] Remember last opened table per (target, db) via ui_state
+- [x] `internal/rows`: query builder for filters/sort/pagination (SPEC §8), identifier sanitizing, column validation, text-cast binds; golden SQL tests
+- [x] TEXT result format for all columns (ADR-004), cell truncation, cell endpoint
+- [x] Row count estimate / exact with 5s timeout
+- [x] Frontend grid component (shared with SQL results): virtualization, NULL rendering, truncated-cell loader, sort, filter builder, pagination, row side panel (view only), column resize, copy cell/row
+- [x] Remember last opened table per (target, db) via ui_state
 
 **Accept:** 1M-row table pages in < 300ms (p95, local); injection attempts in
 column names / filter values are rejected or safely bound (tests); all tricky

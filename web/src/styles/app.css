@@ -275,3 +275,263 @@ table.simple td.nowrap,
 table.simple td.mono {
   white-space: nowrap;
 }
+
+.table-data {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--bg1);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.grid-toolbar button.active {
+  border-color: var(--accent);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.error-banner {
+  background: var(--red);
+  color: var(--bg);
+  padding: 6px 12px;
+}
+
+.grid-area {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+}
+
+.grid-area.with-panel {
+  grid-template-columns: 1fr 380px;
+}
+
+.grid-scroll {
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.grid-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 24px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--bg2);
+}
+
+.grid-hcell {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-right: 1px solid var(--bg1);
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+.grid-hcell .hname {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-hcell.pk .hname::before {
+  content: "🔑";
+  font-size: 9px;
+  margin-right: 2px;
+}
+
+.grid-hcell .htype {
+  color: var(--fg-muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-hcell .hsort {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.grid-hcell .resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.grid-hcell .resize:hover,
+.grid-hcell .resize.active {
+  background: var(--accent);
+}
+
+.grid-row {
+  position: absolute;
+  left: 0;
+}
+
+.grid-row:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-soft) 50%, transparent);
+}
+
+.grid-row:hover {
+  background: var(--bg1);
+}
+
+.grid-row.selected {
+  background: var(--selection);
+}
+
+.grid-rownum,
+.grid-header .grid-rownum {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  line-height: 24px;
+  text-align: right;
+  padding-right: 6px;
+  color: var(--fg-muted);
+  background: var(--bg-soft);
+  border-right: 1px solid var(--bg2);
+  cursor: pointer;
+}
+
+.grid-cell {
+  position: absolute;
+  top: 0;
+  height: 24px;
+  line-height: 24px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-right: 1px solid var(--bg1);
+}
+
+.grid-cell.active {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.null {
+  color: var(--null);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.trunc-mark {
+  color: var(--orange);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.grid-empty {
+  position: absolute;
+  top: 40px;
+  left: 60px;
+}
+
+.row-panel {
+  border-left: 1px solid var(--bg2);
+  background: var(--bg-soft);
+  overflow: auto;
+  min-height: 0;
+}
+
+.row-panel-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--bg2);
+}
+
+.row-fields {
+  margin: 0;
+  padding: 4px 10px 20px;
+}
+
+.row-field {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bg1);
+}
+
+.row-field dt {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.row-field dd {
+  margin: 0;
+}
+
+.row-field pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.filter-builder {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bg1);
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-row,
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-row > span:first-child {
+  width: 40px;
+  text-align: right;
+}
+
+.filter-row input {
+  min-width: 240px;
+}

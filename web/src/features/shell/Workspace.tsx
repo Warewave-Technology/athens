@@ -1,6 +1,8 @@
 import { useRef } from "react";
 import { SchemaTree } from "../schema/SchemaTree";
 import { StructureView } from "../table/StructureView";
+import { TableData } from "../table/TableData";
+import { useRememberLastTable } from "./lastTable";
 import { useWorkspace, type Tab } from "../../store/workspace";
 
 function tabTitle(t: Tab) {
@@ -30,7 +32,7 @@ function TabContent({ tab }: { tab: Tab }) {
         {tab.sub === "structure" ? (
           <StructureView targetId={tab.targetId} db={tab.db} schema={tab.schema} name={tab.name} />
         ) : (
-          <div className="pad muted">Data grid (coming in M4)</div>
+          <TableData targetId={tab.targetId} db={tab.db} schema={tab.schema} name={tab.name} />
         )}
       </div>
     </div>
@@ -50,6 +52,7 @@ export function Workspace() {
     db,
   } = useWorkspace();
   const dragging = useRef(false);
+  useRememberLastTable();
   const active = tabs.find((t) => t.id === activeTab);
 
   const startDrag = (e: React.PointerEvent) => {
