@@ -1,0 +1,30 @@
+# Zalando postgres-operator: annotate the postgresql resource. athens uses the
+# owner of the first database (here ledger_owner) and the credentials Secret
+# the operator generates for that user.
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: acid-ledger
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/display-name: Ledger
+spec:
+  teamId: acid
+  numberOfInstances: 2
+  volume:
+    size: 10Gi
+  users:
+    ledger_owner: []
+  databases:
+    ledger: ledger_owner
+  postgresql:
+    version: "16"
+---
+# Created by the operator; shown here so the example is complete.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ledger-owner.acid-ledger.credentials.postgresql.acid.zalan.do
+stringData:
+  username: ledger_owner
+  password: generated-by-zalando

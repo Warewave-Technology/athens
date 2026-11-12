@@ -1,0 +1,40 @@
+# A database outside the cluster (Azure Database for PostgreSQL, RDS, a VM):
+# an ExternalName Service carries the annotations, a Secret holds the login
+# and another the CA bundle. athens connects to crm-flexible.<ns>.svc, which
+# is not the name on the server certificate, so use verify-ca (the chain is
+# checked against the CA; the host name is not). verify-full would fail.
+apiVersion: v1
+kind: Service
+metadata:
+  name: crm-flexible
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: crm-flexible-login
+    athens.warewave.io/database: crm
+    athens.warewave.io/sslmode: verify-ca
+    athens.warewave.io/ca-secret: azure-postgres-ca      # key ca.crt
+    athens.warewave.io/environment: production
+    athens.warewave.io/display-name: CRM (Azure)
+spec:
+  type: ExternalName
+  externalName: crm-prod.postgres.database.azure.com
+  ports:
+    - {name: postgres, port: 5432}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crm-flexible-login
+stringData:
+  username: athens_reader
+  password: change-me
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-postgres-ca
+stringData:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    (the DigiCert Global Root G2 bundle)
+    -----END CERTIFICATE-----

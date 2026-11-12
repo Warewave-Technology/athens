@@ -1,0 +1,413 @@
+# Adding databases to athens
+
+This guide is for the teams that run PostgreSQL in Kubernetes. It shows how
+to make a database appear in athens, with a recipe for each common setup and
+the annotations that control what users can do.
+
+The exact discovery rules are in [DISCOVERY.md](DISCOVERY.md). Every manifest
+in [`examples/`](examples/) is checked by a test
+(`internal/discovery/docs_examples_test.go`), so it works as written.
+
+- [How discovery works](#how-discovery-works)
+- [Recipes](#recipes)
+  - [Plain StatefulSet (official image)](#plain-statefulset-official-image)
+  - [Production database with an explicit login](#production-database-with-an-explicit-login)
+  - [Bitnami Helm chart](#bitnami-helm-chart)
+  - [CloudNativePG](#cloudnativepg)
+  - [Zalando postgres-operator](#zalando-postgres-operator)
+  - [Database outside the cluster](#database-outside-the-cluster)
+- [A read-only login for read users](#a-read-only-login-for-read-users)
+- [Who may use a database](#who-may-use-a-database)
+- [Annotation reference](#annotation-reference)
+- [Checking the result](#checking-the-result)
+- [Troubleshooting](#troubleshooting)
+
+## How discovery works
+
+athens watches the namespaces listed in `discovery.namespaces`. In those
+namespaces it reads StatefulSets, Deployments, Services, CloudNativePG
+`Cluster`s and Zalando `postgresql`s. By default an object becomes a database
+in athens **only if it carries this annotation**:
+
+```yaml
+athens.warewave.io/enabled: "true"
+```
+
+That one line is usually enough:
+
+| You annotate | athens connects to | Credentials come from |
+|---|---|---|
+| StatefulSet / Deployment | the Service whose selector matches the pods | the postgres container env (`POSTGRES_PASSWORD`, `POSTGRESQL_PASSWORD`, `*_FILE`, `envFrom`, ...) or the `secret` annotation |
+| Service | that Service | the `secret` annotation (required) |
+| CNPG `Cluster` | `<cluster>-rw` | the `<cluster>-app` Secret |
+| Zalando `postgresql` | `<cluster>` | the operator's `<user>.<cluster>.credentials...` Secret |
+
+Changes are picked up within about a second: annotate, refresh athens, the
+database is there. Removing the annotation (or setting it to `"false"`)
+removes it.
+
+athens reads Secret values only when it opens a connection pool and keeps them
+in memory. They never appear in the UI, the API, logs or the audit trail.
+
+> Running with `discovery.requireAnnotation: false`? Then unannotated postgres
+> workloads and operator clusters are found automatically, and `enabled:
+> "false"` is how you hide one. Everything else on this page still applies.
+
+## Recipes
+
+### Plain StatefulSet (official image)
+
+[`examples/statefulset-minimal.yaml`](examples/statefulset-minimal.yaml): the
+only athens-specific line is the `enabled` annotation.
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-db
+  annotations:
+    athens.warewave.io/enabled: "true"
+spec:
+  # ...
+  template:
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: orders-db, key: POSTGRES_USER}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: orders-db, key: POSTGRES_PASSWORD}}
+            - {name: POSTGRES_DB, value: orders}
+```
+
+athens resolves:
+- **user:** `POSTGRES_USER` from the Secret.
+- **password:** `POSTGRES_PASSWORD` from the Secret.
+- **database:** `orders`.
+- **host:** `orders-db.<namespace>.svc:5432`.
+
+The same works for an existing workload without editing its manifest:
+
+```bash
+kubectl -n orders annotate statefulset orders-db athens.warewave.io/enabled=true
+```
+
+Supported credential forms in the container env:
+- `valueFrom.secretKeyRef`
+- `envFrom.secretRef` (a `prefix` is supported)
+- `POSTGRES_PASSWORD_FILE` pointing into a mounted Secret volume
+- a literal `value:`, which works but adds a "plaintext password in pod spec"
+  warning
+
+athens never takes a password from a ConfigMap.
+
+### Production database with an explicit login
+
+[`examples/deployment-production.yaml`](examples/deployment-production.yaml):
+
+```yaml
+metadata:
+  name: billing-db
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: billing-db-admin          # keys username / password
+    athens.warewave.io/readonly-secret: billing-db-ro    # used for read access
+    athens.warewave.io/database: billing
+    athens.warewave.io/display-name: Billing
+    athens.warewave.io/environment: production
+    athens.warewave.io/sslmode: require
+```
+
+- `secret` overrides the env lookup. Use `user-key` / `password-key` when the
+  Secret uses other key names, or `user` for a fixed user name.
+- `environment: production` shows a gold production badge. **Every** data or
+  schema change on this database then needs a confirmation where the user
+  types the database name, not only destructive statements.
+- `readonly-secret` is the login athens uses for users with read access; see
+  [A read-only login](#a-read-only-login-for-read-users).
+
+### Bitnami Helm chart
+
+The chart creates a StatefulSet named `<release>-postgresql` whose container
+reads the password from a mounted file. athens follows the `_FILE` variables
+into the Secret volume, so annotating is enough:
+
+```bash
+helm install pg oci://registry-1.docker.io/bitnamicharts/postgresql -n reporting \
+  --set auth.username=app --set auth.database=appdb
+```
+
+```bash
+kubectl -n reporting annotate statefulset pg-postgresql athens.warewave.io/enabled=true
+```
+
+The chart also creates a headless `-hl` Service. athens prefers the regular
+Service and connects to `pg-postgresql.reporting.svc`. A `helm upgrade` keeps
+the annotation unless the chart rewrites the StatefulSet's annotations.
+
+### CloudNativePG
+
+[`examples/cnpg-cluster.yaml`](examples/cnpg-cluster.yaml): annotate the
+`Cluster`, not its pods or Services.
+
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: payments
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/display-name: Payments
+    athens.warewave.io/environment: staging
+spec:
+  instances: 3
+  bootstrap:
+    initdb:
+      database: payments
+      owner: payments
+```
+
+athens connects to:
+- **host:** `payments-rw` (always the primary), with `sslmode: require`.
+- **login:** the `payments-app` Secret, or `spec.bootstrap.initdb.secret` when
+  that is set.
+- **database:** the `initdb` database.
+
+Optional settings:
+- `discovery.cnpg.verifyTLS: true` verifies the server certificate against the
+  `payments-ca` Secret.
+- `discovery.cnpg.useSuperuser: true` uses `<cluster>-superuser` instead,
+  but only on clusters with `enableSuperuserAccess`. Leave it off unless you
+  need it.
+
+```bash
+kubectl -n payments annotate clusters.postgresql.cnpg.io payments athens.warewave.io/enabled=true
+```
+
+### Zalando postgres-operator
+
+[`examples/zalando-postgresql.yaml`](examples/zalando-postgresql.yaml):
+
+```yaml
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: acid-ledger
+  annotations:
+    athens.warewave.io/enabled: "true"
+spec:
+  users:
+    ledger_owner: []
+  databases:
+    ledger: ledger_owner
+```
+
+athens picks its login in this order:
+1. the user in the `athens.warewave.io/user` annotation;
+2. otherwise the owner of the first database (`ledger_owner`);
+3. `postgres`, but only with `discovery.zalando.useSuperuser: true`.
+
+It reads that user's operator Secret,
+`ledger-owner.acid-ledger.credentials.postgresql.acid.zalan.do` (underscores in
+the user name become dashes). Use `discovery.zalando.secretTemplate` if your
+operator names Secrets differently.
+
+```bash
+kubectl -n ledger annotate postgresqls.acid.zalan.do acid-ledger athens.warewave.io/enabled=true
+```
+
+### Database outside the cluster
+
+[`examples/external-database.yaml`](examples/external-database.yaml): for a
+managed database (Azure Database for PostgreSQL, RDS, Cloud SQL) or a VM,
+create an `ExternalName` Service in a watched namespace and annotate it:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: crm-flexible
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: crm-flexible-login
+    athens.warewave.io/database: crm
+    athens.warewave.io/sslmode: verify-ca
+    athens.warewave.io/ca-secret: azure-postgres-ca      # key ca.crt
+spec:
+  type: ExternalName
+  externalName: crm-prod.postgres.database.azure.com
+  ports:
+    - {name: postgres, port: 5432}
+```
+
+Use `verify-ca`, not `verify-full`. athens connects to
+`crm-flexible.<ns>.svc`, which is not the name on the server certificate, so
+host name verification would fail. `verify-ca` still checks the certificate
+chain against your CA. The Helm chart's NetworkPolicy only allows Postgres
+egress inside the discovery namespaces, so add the external address to
+`networkPolicy.extraEgress`:
+
+```yaml
+networkPolicy:
+  extraEgress:
+    - to: [{ipBlock: {cidr: 20.50.0.0/16}}]
+      ports: [{protocol: TCP, port: 5432}]
+```
+
+## A read-only login for read users
+
+Users with read access always run in `READ ONLY` transactions, and the SQL
+editor rejects anything but reads for them. A dedicated read-only login adds
+a second barrier inside PostgreSQL itself. Create one and point
+`readonly-secret` at it:
+
+```sql
+-- PostgreSQL 14+
+CREATE ROLE billing_ro LOGIN PASSWORD 'change-me-too';
+GRANT pg_read_all_data TO billing_ro;
+```
+
+```sql
+-- older versions: per schema
+CREATE ROLE billing_ro LOGIN PASSWORD 'change-me-too';
+GRANT CONNECT ON DATABASE billing TO billing_ro;
+GRANT USAGE ON SCHEMA public TO billing_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO billing_ro;
+ALTER DEFAULT PRIVILEGES FOR ROLE billing_owner IN SCHEMA public GRANT SELECT ON TABLES TO billing_ro;
+```
+
+```bash
+kubectl -n billing create secret generic billing-db-ro \
+  --from-literal=username=billing_ro --from-literal=password='change-me-too'
+```
+
+```bash
+kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-secret=billing-db-ro
+```
+
+If the read-only login is rejected, athens falls back to the main login with
+`READ ONLY` transactions and shows a warning to admins (Admin → Discovery).
+
+## Who may use a database
+
+By default the `authz.rules` in the athens configuration decide who sees a
+database (see [ACCESS-CONTROL.md](ACCESS-CONTROL.md)). Two annotations let the
+team that owns the database decide instead.
+
+**Make it read-only for everyone:**
+
+```bash
+kubectl -n hr annotate statefulset hr-db athens.warewave.io/readonly=true
+```
+
+**Name the groups that may use it.** This replaces the configured rules for
+this database:
+
+```bash
+kubectl -n hr annotate statefulset hr-db 'athens.warewave.io/access=system-admins:rw,developers:ro'
+```
+
+**Both** ([`examples/access-annotations.yaml`](examples/access-annotations.yaml)):
+only `system-admins` and `developers` see the database, and both get read
+access.
+
+| `access` entry | Meaning |
+|---|---|
+| `system-admins:rw` | read and write (`write` also works) |
+| `developers:ro` | read only (`read` also works) |
+| `3f2a9c1e-...:rw` | an Entra group object ID, used as is |
+
+What happens in edge cases:
+- **Separators:** entries are separated by commas, semicolons or spaces.
+- **Duplicates:** a group listed twice gets the higher level.
+- **Group names:** names such as `system-admins` must be mapped to group IDs
+  in `authz.groupAliases` by the athens operators, because Entra tokens carry
+  IDs.
+- **Mistakes make access narrower, never wider:**
+  - an invalid entry (`qa:admin`, `nogroup`) is ignored and shown as a warning;
+  - an `access` value that grants nobody hides the database from everyone;
+  - a `readonly` value other than `true`/`false` counts as `true`.
+
+Removing an annotation restores the default (the configured rules):
+
+```bash
+kubectl -n hr annotate statefulset hr-db athens.warewave.io/access- athens.warewave.io/readonly-
+```
+
+If the athens operators set `authz.annotationAccess: false`, the `access`
+annotation is ignored and Admin → Discovery says so; `readonly` still applies.
+
+## Annotation reference
+
+All annotations use the prefix `athens.warewave.io/` (configurable with
+`discovery.annotationPrefix`). They go on the StatefulSet, Deployment,
+Service, CNPG `Cluster` or Zalando `postgresql`.
+
+| Annotation | Default | Purpose |
+|---|---|---|
+| `enabled` | — | `"true"` shows the database, `"false"` hides it |
+| `secret` | env lookup | Secret with the login (required on a Service) |
+| `user-key` / `password-key` | `username` / `password` | key names in `secret` |
+| `user` | from `secret` | fixed user name (Zalando: which user's Secret to use) |
+| `readonly-secret` | — | Secret with a read-only login for read users |
+| `readonly-user-key` / `readonly-password-key` | `username` / `password` | key names in `readonly-secret` |
+| `database` | user name, then `postgres` | database opened first |
+| `service` | matched by selector | Service to connect through (on a workload) |
+| `port` | the Service's postgres port, else 5432 | port override |
+| `sslmode` | `discovery.defaultSSLMode` (`prefer`) | `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full` |
+| `ca-secret` / `ca-key` | — / `ca.crt` | CA bundle for `verify-ca` / `verify-full` |
+| `display-name` | object name | name shown in the UI |
+| `environment` | — | `production`, `staging`, `development`; `production` requires typed confirmation for every change |
+| `readonly` | `false` | `"true"` caps everyone at read access |
+| `access` | config rules | `group:rw,group:ro,...`, replaces the rules for this database |
+
+Annotations that only make sense on a workload or Service (`service`,
+`port`, `secret`) are ignored on operator resources. For those, athens uses
+the operator's Services and Secrets.
+
+## Checking the result
+
+Admins see every discovered database under **Administration → Discovery**:
+
+- **Target and owner:** the athens ID (`<namespace>/<name>`) and the object
+  that produced it.
+- **Found by:** annotation, CloudNativePG, Zalando or image detection.
+- **Endpoint:** host, port and first database, plus the TLS mode.
+- **Access:** `config rules`, or the groups from the `access` annotation, and
+  a `read-only` badge.
+- **Warnings:** anything athens had to guess or ignore.
+- **Namespaces table:** objects that looked like databases but could not be
+  added (the problems listed below).
+
+Users see the databases they may use in the server picker at the top of the
+sidebar.
+
+## Troubleshooting
+
+| Problem on Admin → Discovery | Cause | Fix |
+|---|---|---|
+| `no_service` | no Service selects the pods and exposes the postgres port | create a Service, or add the `service` annotation |
+| `service_not_found` | the `service` annotation names a Service that does not exist | fix the name |
+| `credentials_unresolved` | no usable password in the container env, or a Service without `secret` | add the `secret` annotation |
+| `no_container` | the annotated workload has no containers | check the object |
+
+| Warning on the target | Meaning |
+|---|---|
+| plaintext password in pod spec | the password is a literal env value; move it to a Secret |
+| only headless service ... assuming pod `<name>-0` is the primary | only a headless Service matches; athens connects to pod 0 |
+| name ... is used by several targets; renamed | two objects share a name; one gets a `-sts` / `-deploy` / `-svc` suffix |
+| invalid ... annotation ignored | an annotation value was not understood |
+| access entry ... ignored | see [Who may use a database](#who-may-use-a-database) |
+| read-only credential was rejected | the `readonly-secret` login failed; athens uses the main login with READ ONLY transactions |
+
+The database does not appear at all:
+1. Is its namespace in `discovery.namespaces`?
+2. Is the annotation spelled exactly `athens.warewave.io/enabled: "true"`
+   (quoted, on the workload or `Cluster`, not on the pod template)?
+3. Can athens read the namespace? The Helm chart creates a Role there only
+   for namespaces listed in `config.discovery.namespaces`.
+4. Is the database hidden for you only? Check Admin → Discovery. If it is
+   there, the cause is your access: the `authz.rules` or the database's
+   `access` annotation.

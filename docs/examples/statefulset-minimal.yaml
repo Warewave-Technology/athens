@@ -1,0 +1,46 @@
+# The smallest opt-in: one annotation on an official postgres StatefulSet.
+# athens finds the Service by its selector and reads the user, password and
+# database from the container env (secretKeyRef). Nothing else is needed.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-db
+type: Opaque
+stringData:
+  POSTGRES_USER: orders
+  POSTGRES_PASSWORD: change-me
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+spec:
+  selector: {app: orders-db}
+  ports:
+    - {name: postgres, port: 5432, targetPort: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-db
+  annotations:
+    athens.warewave.io/enabled: "true"
+spec:
+  serviceName: orders-db
+  selector:
+    matchLabels: {app: orders-db}
+  template:
+    metadata:
+      labels: {app: orders-db}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - {name: postgres, containerPort: 5432}
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: orders-db, key: POSTGRES_USER}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: orders-db, key: POSTGRES_PASSWORD}}
+            - {name: POSTGRES_DB, value: orders}

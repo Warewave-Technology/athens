@@ -1,0 +1,56 @@
+# A production database with an explicit admin secret, a read-only login for
+# read users, a display name and the production environment badge (every
+# data or schema change then needs a typed confirmation).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: billing-db-admin
+stringData:
+  username: billing_owner
+  password: change-me
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: billing-db-ro
+stringData:
+  username: billing_ro
+  password: change-me-too
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-db
+spec:
+  selector: {app: billing-db}
+  ports:
+    - {port: 5432, targetPort: 5432}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-db
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: billing-db-admin          # keys username / password
+    athens.warewave.io/readonly-secret: billing-db-ro    # used for read access
+    athens.warewave.io/database: billing
+    athens.warewave.io/display-name: Billing
+    athens.warewave.io/environment: production
+    athens.warewave.io/sslmode: require
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: billing-db}
+  template:
+    metadata:
+      labels: {app: billing-db}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: billing-db-admin, key: password}}

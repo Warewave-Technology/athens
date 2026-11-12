@@ -1,0 +1,43 @@
+# Per-database access (ADR-022): only the two listed groups see this
+# database, and because it is read-only, both get read access.
+# "system-admins" and "developers" are names from authz.groupAliases; Entra
+# group IDs work directly too.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hr-db
+spec:
+  selector: {app: hr-db}
+  ports:
+    - {port: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hr-db
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/readonly: "true"
+    athens.warewave.io/access: "system-admins:rw, developers:ro"
+    athens.warewave.io/environment: production
+spec:
+  serviceName: hr-db
+  selector:
+    matchLabels: {app: hr-db}
+  template:
+    metadata:
+      labels: {app: hr-db}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: hr-db, key: password}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hr-db
+stringData:
+  password: change-me

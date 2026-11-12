@@ -1,0 +1,28 @@
+# CloudNativePG: annotate the Cluster resource. athens connects to the
+# <cluster>-rw Service with the <cluster>-app Secret the operator creates and
+# opens the bootstrap database. TLS is always on (sslmode require).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: payments
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/display-name: Payments
+    athens.warewave.io/environment: staging
+spec:
+  instances: 3
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: payments
+      owner: payments
+---
+# Created by the operator; shown here so the example is complete.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payments-app
+stringData:
+  username: payments
+  password: generated-by-cnpg
