@@ -2,8 +2,8 @@ apiVersion: v2
 name: athens
 description: In-cluster PostgreSQL web client with Entra ID SSO and automatic discovery
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 home: https://github.com/Warewave-Technology/athens
 sources: ["https://github.com/Warewave-Technology/athens"]
 icon: https://raw.githubusercontent.com/Warewave-Technology/athens/main/docs/assets/athens-icon.png
