@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { EnvBadge } from "../shell/Pickers";
+import { EnvBadge } from "../../components/EnvBadge";
 
 export interface ConfirmDetails {
   class: string;
@@ -8,6 +8,12 @@ export interface ConfirmDetails {
   environment: string;
   requireTypedConfirmation: boolean;
 }
+
+const classLabel: Record<string, string> = {
+  dml: "Data change",
+  ddl: "Schema change",
+  read: "Read",
+};
 
 export function ConfirmDialog(p: {
   details: ConfirmDetails;
@@ -20,40 +26,60 @@ export function ConfirmDialog(p: {
   const ok = !p.details.requireTypedConfirmation || typed === p.db;
   return (
     <div className="modal-backdrop" onKeyDown={(e) => e.key === "Escape" && p.onCancel()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <form
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ok) p.onConfirm();
+        }}
+      >
         <h2 id="confirm-title">
-          {p.details.destructive ? "Run a destructive statement?" : "Confirm write"}
+          {p.details.destructive ? "This can’t be undone" : "Confirm this change"}
         </h2>
-        <p>
-          <span className="badge">{p.details.class.toUpperCase()}</span>{" "}
-          {p.details.destructive && <span className="badge env-production">destructive</span>} on{" "}
-          <b>
-            {p.target} · {p.db}
-          </b>{" "}
+        <div className="confirm-meta">
+          <span className="badge">{classLabel[p.details.class] ?? p.details.class}</span>
+          {p.details.destructive && <span className="badge danger">Destructive</span>}
+          <span>
+            on <b>{p.target}</b> · {p.db}
+          </span>
           <EnvBadge env={p.details.environment} />
-        </p>
+        </div>
         <pre className="mono confirm-summary">{p.details.summary}</pre>
         {p.details.requireTypedConfirmation && (
           <label className="confirm-typed">
-            This is a <b>production</b> target. Type the database name <code>{p.db}</code> to
-            continue:
+            <span>
+              This is a production database. Type <code>{p.db}</code> to confirm.
+            </span>
             <input
               autoFocus
               className="mono"
               value={typed}
+              placeholder={p.db}
               onChange={(e) => setTyped(e.target.value)}
+              aria-label="Database name"
             />
           </label>
         )}
         <div className="modal-actions">
-          <button onClick={p.onCancel} autoFocus={!p.details.requireTypedConfirmation}>
+          <button
+            type="button"
+            onClick={p.onCancel}
+            autoFocus={!p.details.requireTypedConfirmation}
+          >
             Cancel
           </button>
-          <button className="danger" disabled={!ok} onClick={p.onConfirm}>
-            Run
+          <button
+            type="submit"
+            className={p.details.destructive ? "danger" : "primary"}
+            disabled={!ok}
+          >
+            {p.details.destructive ? "Run anyway" : "Run"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

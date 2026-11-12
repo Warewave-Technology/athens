@@ -1,3 +1,5 @@
+import { Trash2, X } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 
@@ -52,7 +54,7 @@ export function HistoryDrawer(p: {
         <b>History</b>
         <span className="spacer" />
         <button className="ghost" onClick={p.onClose} aria-label="Close">
-          ×
+          <Icon as={X} size={15} />
         </button>
       </div>
       {q.isPending && <div className="pad muted">Loading…</div>}
@@ -73,7 +75,7 @@ export function HistoryDrawer(p: {
                   del.mutate(h.id);
                 }}
               >
-                ×
+                <Icon as={Trash2} size={13} />
               </button>
             </div>
             <pre className="mono">{h.sql}</pre>
@@ -129,7 +131,7 @@ export function FavoritesDrawer(p: {
           Save current
         </button>
         <button className="ghost" onClick={p.onClose} aria-label="Close">
-          ×
+          <Icon as={X} size={15} />
         </button>
       </div>
       {save.isError && <div className="error-text pad">{save.error.message}</div>}
@@ -154,7 +156,7 @@ export function FavoritesDrawer(p: {
                   if (window.confirm(`Delete saved query "${s.name}"?`)) del.mutate(s.id);
                 }}
               >
-                ×
+                <Icon as={Trash2} size={13} />
               </button>
             </div>
             <pre className="mono">{s.sql}</pre>

@@ -1,3 +1,5 @@
+import { KeyRound } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useStructure } from "../../api/hooks";
 import { formatBytes } from "../../format";
 import type { ReactNode } from "react";
@@ -51,14 +53,14 @@ export function StructureView(props: {
               <tr key={c.name}>
                 <td className="muted">{c.position}</td>
                 <td className="mono">
-                  {pk.has(c.name) && <span title="primary key">🔑 </span>}
+                  {pk.has(c.name) && <Icon as={KeyRound} size={12} className="icon pk-icon" />}
                   {c.name}
                 </td>
                 <td className="mono">{c.type}</td>
                 <td className="nowrap">
                   {c.notNull ? "NOT NULL" : <span className="muted">null</span>}
                 </td>
-                <td className="mono">
+                <td className="mono wrap">
                   {c.identity
                     ? "identity " + c.identity.replace("_", " ")
                     : c.generated
@@ -92,7 +94,7 @@ export function StructureView(props: {
             {s.foreignKeys.map((f) => (
               <tr key={f.name + f.direction}>
                 <td className="mono">{f.name}</td>
-                <td>{f.direction === "out" ? "→ outgoing" : "← incoming"}</td>
+                <td>{f.direction === "out" ? "References" : "Referenced by"}</td>
                 <td className="mono">{f.columns.join(", ")}</td>
                 <td className="mono">
                   {f.refSchema}.{f.refTable} ({f.refColumns.join(", ")})
@@ -118,7 +120,7 @@ export function StructureView(props: {
             {s.indexes.map((i) => (
               <tr key={i.name}>
                 <td className="mono">{i.name}</td>
-                <td className="mono">{i.definition}</td>
+                <td className="mono wrap">{i.definition}</td>
                 <td>{formatBytes(i.sizeBytes)}</td>
                 <td>
                   {i.primary && <span className="badge">primary</span>}{" "}
@@ -142,7 +144,7 @@ export function StructureView(props: {
             {s.checks.map((c) => (
               <tr key={c.name}>
                 <td className="mono">{c.name}</td>
-                <td className="mono">{c.definition}</td>
+                <td className="mono wrap">{c.definition}</td>
               </tr>
             ))}
           </tbody>
@@ -155,7 +157,7 @@ export function StructureView(props: {
               <tr key={t.name}>
                 <td className="mono">{t.name}</td>
                 <td>{t.enabled}</td>
-                <td className="mono">{t.definition}</td>
+                <td className="mono wrap">{t.definition}</td>
               </tr>
             ))}
           </tbody>

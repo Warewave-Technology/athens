@@ -17,41 +17,43 @@ export interface SqlEditorProps {
 }
 
 const theme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "var(--bg)", color: "var(--fg)" },
-  ".cm-content": { caretColor: "var(--fg)" },
+  "&": { height: "100%", backgroundColor: "var(--surface)", color: "var(--text)" },
+  ".cm-content": { caretColor: "var(--accent)" },
   ".cm-gutters": {
-    backgroundColor: "var(--bg-soft)",
-    color: "var(--fg-muted)",
-    borderRight: "1px solid var(--bg1)",
+    backgroundColor: "var(--surface)",
+    color: "var(--text-3)",
+    borderRight: "1px solid var(--line)",
   },
   ".cm-activeLine, .cm-activeLineGutter": {
-    backgroundColor: "color-mix(in srgb, var(--bg1) 60%, transparent)",
+    backgroundColor: "color-mix(in srgb, var(--subtle) 55%, transparent)",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--selection) !important",
   },
   ".cm-tooltip": {
-    backgroundColor: "var(--bg-soft)",
-    border: "1px solid var(--bg2)",
-    color: "var(--fg)",
+    backgroundColor: "var(--surface)",
+    border: "1px solid var(--line-strong)",
+    borderRadius: "8px",
+    boxShadow: "var(--shadow-pop)",
+    color: "var(--text)",
   },
   ".cm-tooltip-autocomplete ul li[aria-selected]": {
-    backgroundColor: "var(--accent)",
-    color: "var(--bg)",
+    backgroundColor: "var(--accent-soft)",
+    color: "var(--accent-text)",
   },
   ".cm-scroller": { fontFamily: "inherit" },
 });
 
-// Gruvbox token colors via CSS variables, so light and dark both work.
+// Aegean token colors via CSS variables, so light and dark both work.
 const highlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "var(--red)", fontWeight: "600" },
-  { tag: [tags.string, tags.special(tags.string)], color: "var(--green)" },
-  { tag: [tags.number, tags.bool, tags.null], color: "var(--purple)" },
-  { tag: tags.comment, color: "var(--fg-muted)", fontStyle: "italic" },
-  { tag: [tags.typeName, tags.standard(tags.name)], color: "var(--yellow)" },
-  { tag: [tags.function(tags.variableName), tags.special(tags.name)], color: "var(--aqua)" },
-  { tag: tags.operator, color: "var(--orange)" },
-  { tag: [tags.quote, tags.special(tags.variableName)], color: "var(--blue)" },
+  { tag: tags.keyword, color: "var(--syn-keyword)", fontWeight: "500" },
+  { tag: [tags.string, tags.special(tags.string)], color: "var(--syn-string)" },
+  { tag: [tags.number, tags.bool, tags.null], color: "var(--syn-number)" },
+  { tag: tags.comment, color: "var(--syn-comment)", fontStyle: "italic" },
+  { tag: [tags.typeName, tags.standard(tags.name)], color: "var(--syn-type)" },
+  { tag: [tags.function(tags.variableName), tags.special(tags.name)], color: "var(--syn-fn)" },
+  { tag: tags.operator, color: "var(--text-2)" },
+  { tag: [tags.quote, tags.special(tags.variableName)], color: "var(--syn-fn)" },
 ]);
 
 export function SqlEditor(p: SqlEditorProps) {

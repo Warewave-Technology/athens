@@ -8,6 +8,8 @@ import {
   type ColumnSizingState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { ArrowDown, ArrowUp, KeyRound } from "lucide-react";
+import { Icon } from "../../components/Icon";
 
 export interface DataGridProps {
   columns: GridColumn[];
@@ -25,19 +27,29 @@ export interface DataGridProps {
   cellClassName?: (row: number, col: number) => string;
   onCellDoubleClick?: (row: number, col: number) => void;
   rowClassName?: (row: number) => string;
-  /** Row number clicks (multi-select with modifier keys). Default: select row. */
+  /** Row number clicks. Default: select row. */
   onRowNumberClick?: (row: number, e: React.MouseEvent) => void;
+  /** Checkbox column for multi-row selection. */
+  selectable?: boolean;
+  selected?: Set<number>;
+  onToggleSelect?: (row: number) => void;
+  onToggleAll?: () => void;
 }
 
-const ROW_H = 24;
+const ROW_H = 30;
+const HEAD_H = 34;
 const MIN_W = 60;
 
+// Initial width: enough for the column name and its type label, plus a
+// type-based guess for the values.
 function defaultWidth(c: GridColumn) {
   const t = c.type;
-  if (/^(integer|bigint|smallint|boolean|oid)$/.test(t)) return 90;
-  if (/timestamp|date|time|uuid|numeric/.test(t)) return 170;
-  if (/json|text|char|\[\]/.test(t)) return 220;
-  return 140;
+  let byType = 140;
+  if (/^(integer|bigint|smallint|boolean|oid)$/.test(t)) byType = 96;
+  else if (/timestamp|date|time|uuid|numeric/.test(t)) byType = 190;
+  else if (/json|text|char|\[\]/.test(t)) byType = 220;
+  const byHeader = 34 + c.name.length * 7.6 + Math.min(t.length, 18) * 6;
+  return Math.round(Math.min(360, Math.max(byType, byHeader)));
 }
 
 export function DataGrid(p: DataGridProps) {
@@ -70,7 +82,9 @@ export function DataGrid(p: DataGridProps) {
   const widths = headers.map((h) => h.getSize());
   const offsets: number[] = [];
   widths.forEach((_, i) => offsets.push(i ? offsets[i - 1] + widths[i - 1] : 0));
-  const totalW = widths.reduce((a, b) => a + b, 0) + 48;
+  const gutter = p.selectable ? 84 : 52;
+  const totalW = widths.reduce((a, b) => a + b, 0) + gutter;
+  const allSelected = !!p.selected && p.rows.length > 0 && p.selected.size === p.rows.length;
 
   const rowV = useVirtualizer({
     count: p.rows.length,
@@ -148,9 +162,21 @@ export function DataGrid(p: DataGridProps) {
 
   return (
     <div className="grid-scroll" ref={scrollRef} tabIndex={0} onKeyDown={onKey}>
-      <div style={{ width: totalW, height: rowV.getTotalSize() + ROW_H, position: "relative" }}>
-        <div className="grid-header" style={{ width: totalW }}>
-          <div className="grid-rownum hdr" />
+      <div style={{ width: totalW, height: rowV.getTotalSize() + HEAD_H, position: "relative" }}>
+        <div className="grid-header" style={{ width: totalW, height: HEAD_H }}>
+          <div className="grid-gutter hdr" style={{ width: gutter }}>
+            {p.selectable && (
+              <input
+                type="checkbox"
+                aria-label="Select all rows on this page"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = !allSelected && (p.selected?.size ?? 0) > 0;
+                }}
+                onChange={() => p.onToggleAll?.()}
+              />
+            )}
+          </div>
           {vcols.map((vc) => {
             const h = headers[vc.index];
             const col = p.columns[vc.index];
@@ -159,20 +185,21 @@ export function DataGrid(p: DataGridProps) {
               <div
                 key={vc.key}
                 className={"grid-hcell" + (p.pk?.includes(col.name) ? " pk" : "")}
-                style={{ left: 48 + offsets[vc.index], width: widths[vc.index] }}
+                style={{ left: gutter + offsets[vc.index], width: widths[vc.index] }}
                 onClick={(e) => clickHeader(col.name, e.shiftKey)}
                 title={
                   col.name +
                   " : " +
                   col.type +
-                  (p.onSortChange ? "\nclick to sort, shift+click to add" : "")
+                  (p.onSortChange ? "\nClick to sort · shift-click to sort by several columns" : "")
                 }
               >
+                {p.pk?.includes(col.name) && <Icon as={KeyRound} size={12} className="icon hkey" />}
                 <span className="hname">{col.name}</span>
                 <span className="htype">{col.type}</span>
                 {si >= 0 && (
                   <span className="hsort">
-                    {p.sort![si].dir === "asc" ? "▲" : "▼"}
+                    <Icon as={p.sort![si].dir === "asc" ? ArrowUp : ArrowDown} size={12} />
                     {(p.sort?.length ?? 0) > 1 ? si + 1 : ""}
                   </span>
                 )}
@@ -197,16 +224,26 @@ export function DataGrid(p: DataGridProps) {
                 (p.selectedRow === r ? " selected" : "") +
                 (p.rowClassName ? " " + p.rowClassName(r) : "")
               }
-              style={{ top: ROW_H + vr.start, height: ROW_H, width: totalW }}
+              style={{ top: HEAD_H + vr.start, height: ROW_H, width: totalW }}
             >
-              <div
-                className="grid-rownum"
-                onClick={(e) =>
-                  p.onRowNumberClick ? p.onRowNumberClick(r, e) : p.onSelectRow?.(r)
-                }
-                title="Open row (⌘/Ctrl-click to select)"
-              >
-                {r + 1}
+              <div className="grid-gutter" style={{ width: gutter }}>
+                {p.selectable && (
+                  <input
+                    type="checkbox"
+                    aria-label={"Select row " + (r + 1)}
+                    checked={!!p.selected?.has(r)}
+                    onChange={() => p.onToggleSelect?.(r)}
+                  />
+                )}
+                <button
+                  className="rownum"
+                  onClick={(e) =>
+                    p.onRowNumberClick ? p.onRowNumberClick(r, e) : p.onSelectRow?.(r)
+                  }
+                  title="Open this row"
+                >
+                  {r + 1}
+                </button>
               </div>
               {vcols.map((vc) => {
                 const c = vc.index;
@@ -222,7 +259,7 @@ export function DataGrid(p: DataGridProps) {
                       (v === null ? " is-null" : "") +
                       (p.cellClassName ? " " + p.cellClassName(r, c) : "")
                     }
-                    style={{ left: 48 + offsets[c], width: widths[c] }}
+                    style={{ left: gutter + offsets[c], width: widths[c] }}
                     onClick={() => setActive({ r, c })}
                     onDoubleClick={() =>
                       p.onCellDoubleClick ? p.onCellDoubleClick(r, c) : p.onSelectRow?.(r)
@@ -237,7 +274,7 @@ export function DataGrid(p: DataGridProps) {
             </div>
           );
         })}
-        {p.rows.length === 0 && <div className="grid-empty muted">No rows</div>}
+        {p.rows.length === 0 && <div className="grid-empty">No rows match.</div>}
       </div>
     </div>
   );

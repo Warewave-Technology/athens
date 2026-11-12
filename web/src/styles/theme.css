@@ -1,50 +1,84 @@
-/* Gruvbox palette (https://github.com/morhetz/gruvbox), light + dark. */
+/*
+ * Aegean — athens design tokens.
+ * Marble and limestone neutrals, one Aegean blue accent, laurel gold reserved
+ * for environment warnings (production). IBM Plex Sans for UI, Plex Mono for data.
+ */
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
 :root,
 :root[data-theme="light"] {
-  --bg: #fbf1c7;
-  --bg-soft: #f2e5bc;
-  --bg1: #ebdbb2;
-  --bg2: #d5c4a1;
-  --bg3: #bdae93;
-  --fg: #3c3836;
-  --fg-soft: #504945;
-  --fg-muted: #7c6f64;
-  --red: #9d0006;
-  --green: #79740e;
-  --yellow: #b57614;
-  --blue: #076678;
-  --purple: #8f3f71;
-  --aqua: #427b58;
-  --orange: #af3a03;
-  --accent: var(--blue);
-  --danger: var(--red);
-  --null: #928374;
-  --selection: #d5c4a1;
-  --dirty: rgba(181, 118, 20, 0.22);
-  --shadow: 0 6px 24px rgba(60, 56, 54, 0.18);
+  --bg: #f9f8f5; /* marble */
+  --surface: #ffffff;
+  --sidebar: #f1efe9; /* limestone */
+  --subtle: #ebe8e1; /* hover fill */
+  --line: #e4e1d9;
+  --line-strong: #d3cfc4;
+  --text: #1b1e24; /* ink */
+  --text-2: #55534d;
+  --text-3: #8a877e; /* pumice */
+  --accent: #1d5fa8; /* aegean */
+  --accent-hover: #174f8d;
+  --accent-soft: #e7eef7;
+  --accent-text: #1a5496;
+  --on-accent: #ffffff;
+  --laurel: #9c7a28;
+  --laurel-soft: #f5eedb;
+  --laurel-text: #7a5e1b;
+  --danger: #b3372b;
+  --danger-soft: #f8e7e4;
+  --success: #3b7553;
+  --success-soft: #e5f0e9;
+  --selection: #dbe6f3;
+  --dirty: #fbf3d9;
+  --null: #a8a49a;
+  --focus: 0 0 0 3px rgba(29, 95, 168, 0.22);
+  --shadow-pop: 0 12px 32px rgba(27, 30, 36, 0.12), 0 2px 6px rgba(27, 30, 36, 0.06);
+  --syn-keyword: #1d5fa8;
+  --syn-string: #3b7553;
+  --syn-number: #8a4fa0;
+  --syn-comment: #8a877e;
+  --syn-type: #9c7a28;
+  --syn-fn: #1e7b85;
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #282828;
-  --bg-soft: #32302f;
-  --bg1: #3c3836;
-  --bg2: #504945;
-  --bg3: #665c54;
-  --fg: #ebdbb2;
-  --fg-soft: #d5c4a1;
-  --fg-muted: #a89984;
-  --red: #fb4934;
-  --green: #b8bb26;
-  --yellow: #fabd2f;
-  --blue: #83a598;
-  --purple: #d3869b;
-  --aqua: #8ec07c;
-  --orange: #fe8019;
-  --null: #7c6f64;
-  --selection: #504945;
-  --dirty: rgba(250, 189, 47, 0.18);
-  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  --bg: #0d1320; /* night sea */
+  --surface: #131b2b;
+  --sidebar: #0f1626;
+  --subtle: #1b2538;
+  --line: #222d42;
+  --line-strong: #2f3c55;
+  --text: #e7ebf2;
+  --text-2: #b4bccb;
+  --text-3: #7d889c;
+  --accent: #6fa8e8;
+  --accent-hover: #8cbbef;
+  --accent-soft: #17294a;
+  --accent-text: #8cbbef;
+  --on-accent: #0d1320;
+  --laurel: #d3b062;
+  --laurel-soft: #2c2616;
+  --laurel-text: #dcbd75;
+  --danger: #ec7d6f;
+  --danger-soft: #3a1d1c;
+  --success: #7cc49a;
+  --success-soft: #16301f;
+  --selection: #1f3557;
+  --dirty: #332b14;
+  --null: #5c6679;
+  --focus: 0 0 0 3px rgba(111, 168, 232, 0.3);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --syn-keyword: #7fb2ec;
+  --syn-string: #8ccaa3;
+  --syn-number: #c79ae0;
+  --syn-comment: #6c778b;
+  --syn-type: #d3b062;
+  --syn-fn: #6cc4cc;
   color-scheme: dark;
 }
 
@@ -61,25 +95,38 @@ body,
 
 body {
   background: var(--bg);
-  color: var(--fg);
+  color: var(--text);
   font:
-    13px/1.4 system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
+    400 13px/1.45 "IBM Plex Sans",
+    system-ui,
     sans-serif;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
 }
 
 code,
+pre,
 .mono,
 .cm-editor {
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-text);
+  text-decoration: none;
 }
+
+a:hover {
+  text-decoration: underline;
+}
+
+svg.icon {
+  flex: none;
+  stroke-width: 1.75;
+}
+
+/* ---- controls ---- */
 
 button,
 input,
@@ -90,97 +137,178 @@ textarea {
 }
 
 button {
-  background: var(--bg1);
-  border: 1px solid var(--bg2);
-  border-radius: 4px;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    background 120ms,
+    border-color 120ms;
 }
 
 button:hover:not(:disabled) {
-  background: var(--bg2);
+  background: var(--subtle);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--bg);
+  color: var(--on-accent);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: var(--bg);
+  color: #fff;
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(1.08);
 }
 
 button.ghost {
   background: transparent;
   border-color: transparent;
+  color: var(--text-2);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--subtle);
+  color: var(--text);
+}
+
+button.icon-btn {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+button.active {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-text);
 }
 
 input,
 select,
 textarea {
-  background: var(--bg-soft);
-  border: 1px solid var(--bg2);
-  border-radius: 4px;
-  padding: 3px 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+textarea {
+  height: auto;
+  padding: 6px 8px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-3);
 }
 
 input:focus,
 select:focus,
-textarea:focus,
-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus);
 }
 
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+/* ---- badges and text roles ---- */
+
 .badge {
-  display: inline-block;
-  padding: 0 6px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
   font-size: 11px;
-  line-height: 16px;
-  background: var(--bg2);
-  color: var(--fg-soft);
+  font-weight: 500;
+  background: var(--subtle);
+  color: var(--text-2);
   white-space: nowrap;
 }
 
 .badge.env-production {
-  background: var(--red);
-  color: var(--bg);
+  background: var(--laurel-soft);
+  color: var(--laurel-text);
 }
 
 .badge.env-staging {
-  background: var(--yellow);
-  color: var(--bg);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .badge.env-development {
-  background: var(--green);
-  color: var(--bg);
-}
-
-.badge.level-read {
-  background: var(--bg2);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .badge.level-write {
-  background: var(--aqua);
-  color: var(--bg);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.badge.level-read {
+  background: var(--subtle);
+  color: var(--text-2);
+}
+
+.badge.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .muted {
-  color: var(--fg-muted);
+  color: var(--text-3);
 }
 
 .error-text {
-  color: var(--red);
+  color: var(--danger);
+}
+
+.warn-text {
+  color: var(--laurel-text);
+}
+
+.small {
+  font-size: 11px;
 }
 
 .center-screen {
@@ -189,12 +317,17 @@ button:focus-visible {
   height: 100%;
 }
 
-button.primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.15);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
-button.danger:hover:not(:disabled) {
-  background: var(--danger);
-  filter: brightness(1.15);
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

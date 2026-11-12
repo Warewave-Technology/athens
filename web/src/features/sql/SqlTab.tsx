@@ -1,3 +1,5 @@
+import { Download, Play, Square } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, enc, tpath } from "../../api/client";
@@ -47,10 +49,21 @@ function useCompletionSchema(targetId: string, db: string) {
   }, [q.data]);
 }
 
-export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
+export function SqlTab({
+  targetId,
+  db,
+  seed,
+  onSeedUsed,
+}: {
+  targetId: string;
+  db: string;
+  seed?: string;
+  onSeedUsed?: () => void;
+}) {
   const viewRef = useRef<EditorView | null>(null);
-  const [initial, setInitial] = useState<string | null>(null);
-  const [text, setText] = useState("");
+  // a seeded tab (opened from a table) starts with its seed instead of the draft
+  const [initial, setInitial] = useState<string | null>(() => seed ?? null);
+  const [text, setText] = useState(() => seed ?? "");
   const [running, setRunning] = useState<{
     id: string;
     started: number;
@@ -72,7 +85,13 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
   // restore the draft once; the restored text counts as already saved so the
   // autosave never overwrites the draft with the empty initial state
   const lastSaved = useRef<string | null>(null);
+  // A seeded tab (opened from a table) starts with its seed, which then
+  // becomes the draft; otherwise the saved draft is restored.
   useEffect(() => {
+    if (seed !== undefined) {
+      onSeedUsed?.();
+      return;
+    }
     api<{ sql: string }>(draftURL)
       .then((d) => d.sql)
       .catch(() => "")
@@ -81,6 +100,8 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
         setText(sql);
         setInitial(sql);
       });
+    // the seed is read once, when the tab mounts
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftURL]);
 
   // autosave (debounced 1s)
@@ -172,11 +193,15 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
 
   return (
     <div className={"sql-tab" + (drawer ? " with-drawer" : "")}>
-      <div className="sql-main" style={{ gridTemplateRows: `32px ${editorH}px 5px 1fr` }}>
+      <div
+        className="sql-main"
+        style={{ gridTemplateRows: `46px ${editorH}px 5px minmax(0, 1fr)` }}
+      >
         <div className="grid-toolbar">
           {running ? (
             <button className="danger" onClick={cancel} title="Cancel (Esc)">
-              ■ Cancel
+              <Icon as={Square} size={12} />
+              Cancel
             </button>
           ) : (
             <button
@@ -184,7 +209,8 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
               onClick={() => viewRef.current && void execute(runnableText(viewRef.current))}
               title="Run (⌘/Ctrl+Enter)"
             >
-              ▶ Run
+              <Icon as={Play} size={13} />
+              Run
             </button>
           )}
           {running && <span className="mono">{(elapsed / 1000).toFixed(1)} s</span>}
@@ -277,7 +303,8 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
                 }
                 title="Download the rows shown as CSV"
               >
-                ⤓ CSV
+                <Icon as={Download} size={14} />
+                CSV
               </button>
             )}
           </div>

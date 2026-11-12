@@ -1,3 +1,5 @@
+import { Braces, Copy, X } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useState } from "react";
 import { copyText, rowAsJSON, type Cell, type GridColumn } from "./gridUtil";
 
@@ -31,16 +33,18 @@ export function RowPanel(p: RowPanelProps) {
             )
           }
         >
-          Copy JSON
+          <Icon as={Braces} size={14} />
+          JSON
         </button>
         <button
           className="ghost"
           onClick={() => copyText(p.columns.map((_, i) => value(i) ?? "").join("\t"))}
         >
-          Copy TSV
+          <Icon as={Copy} size={14} />
+          Copy
         </button>
         <button className="ghost" aria-label="Close" onClick={p.onClose}>
-          ×
+          <Icon as={X} size={15} />
         </button>
       </div>
       {error && <div className="error-text pad">{error}</div>}

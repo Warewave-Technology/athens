@@ -9,6 +9,27 @@ import { renderValue, type Cell } from "../grid/gridUtil";
 import { RowPanel } from "../grid/RowPanel";
 import { ConfirmDialog, type ConfirmDetails } from "../sql/ConfirmDialog";
 import { RowEditor } from "./RowEditor";
+import {
+  ArrowUpDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ListFilter,
+  Lock,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
+import { Icon } from "../../components/Icon";
+
+const readOnlyReason = {
+  no_primary_key: "Read only · no primary key",
+  not_a_table: "Read only · not a table",
+  read_only_access: "Read only access",
+} as const;
 import { b64url, pkOf, relPath, type GridPage } from "./tableUtil";
 
 type Panel =
@@ -277,129 +298,62 @@ export function TableData(props: { targetId: string; db: string; schema: string;
 
   return (
     <div className="table-data">
-      <div className="grid-toolbar">
+      <div className="toolbar">
         <button
           className={showFilters || filters.length ? "active" : ""}
           onClick={() => setShowFilters((s) => !s)}
+          aria-expanded={showFilters}
         >
-          Filter{filters.length ? ` (${filters.length})` : ""}
+          <Icon as={ListFilter} size={14} />
+          Filter{filters.length ? ` · ${filters.length}` : ""}
         </button>
         {sort.length > 0 && (
-          <button
-            className="ghost"
-            onClick={() => changeView(() => setSort([]))}
-            title="Clear sort"
-          >
-            Sort: {sort.map((s) => s.column + (s.dir === "desc" ? " ↓" : " ↑")).join(", ")} ×
+          <button className="chip" onClick={() => changeView(() => setSort([]))} title="Clear sort">
+            <Icon as={ArrowUpDown} size={13} />
+            {sort.map((s) => s.column + (s.dir === "desc" ? " ↓" : " ↑")).join(", ")}
+            <Icon as={X} size={12} />
           </button>
         )}
         <button
-          className="ghost"
+          className="ghost icon-btn"
           onClick={() => changeView(() => void q.refetch())}
-          title="Refresh"
+          title="Reload rows"
+          aria-label="Reload rows"
         >
-          ⟳
+          <Icon as={RefreshCw} size={14} className={"icon" + (q.isFetching ? " spin" : "")} />
         </button>
-        {editable && (
-          <>
-            <button onClick={() => setPanel({ kind: "insert" })} disabled={busy}>
-              + Row
-            </button>
-            {selection.size > 0 && (
-              <button className="danger" onClick={deleteSelected} disabled={busy}>
-                Delete {selection.size}
-              </button>
-            )}
-            {dirtyRows > 0 && (
-              <>
-                <button className="primary" onClick={() => void saveEdits()} disabled={busy}>
-                  Save {dirtyRows} row{dirtyRows > 1 ? "s" : ""}
-                </button>
-                <button onClick={resetEdits} disabled={busy}>
-                  Discard
-                </button>
-              </>
-            )}
-          </>
-        )}
         {rel && !rel.editable && rel.editableReason && (
-          <span className="badge" title="Rows of this relation cannot be edited">
-            read-only: {rel.editableReason.replace(/_/g, " ")}
+          <span className="badge" title="Rows of this relation can't be edited here">
+            <Icon as={Lock} size={12} />
+            {readOnlyReason[rel.editableReason]}
           </span>
         )}
         <span className="spacer" />
-        {q.isFetching && <span className="muted">Loading…</span>}
-        {page && <span className="muted">{page.durationMs} ms</span>}
-        <span className="pager">
-          <button
-            className="ghost"
-            disabled={offset === 0}
-            onClick={() => changeView(() => setOffset(0))}
-            aria-label="First page"
-          >
-            «
+        {editable && selection.size > 0 && (
+          <button className="danger" onClick={deleteSelected} disabled={busy}>
+            <Icon as={Trash2} size={14} />
+            Delete {selection.size}
           </button>
+        )}
+        {editable && dirtyRows > 0 && (
+          <>
+            <button onClick={resetEdits} disabled={busy}>
+              Discard
+            </button>
+            <button className="primary" onClick={() => void saveEdits()} disabled={busy}>
+              <Icon as={Check} size={14} />
+              Save {dirtyRows} {dirtyRows > 1 ? "rows" : "row"}
+            </button>
+          </>
+        )}
+        {editable && (
           <button
-            className="ghost"
-            disabled={offset === 0}
-            onClick={() => changeView(() => setOffset(Math.max(0, offset - limit)))}
-            aria-label="Previous page"
+            className={dirtyRows || selection.size ? "" : "primary"}
+            onClick={() => setPanel({ kind: "insert" })}
+            disabled={busy}
           >
-            ‹
-          </button>
-          <span>
-            page {pageNo}
-            {pages != null && (page?.totalExact ? ` of ${pages}` : ` of ~${pages}`)}
-          </span>
-          <button
-            className="ghost"
-            disabled={!hasNext}
-            onClick={() => changeView(() => setOffset(offset + limit))}
-            aria-label="Next page"
-          >
-            ›
-          </button>
-          <button
-            className="ghost"
-            disabled={!hasNext || pages == null || !page?.totalExact}
-            onClick={() => pages && changeView(() => setOffset((pages - 1) * limit))}
-            aria-label="Last page"
-          >
-            »
-          </button>
-        </span>
-        <select
-          value={limit}
-          aria-label="Rows per page"
-          onChange={(e) =>
-            changeView(() => {
-              setLimit(Number(e.target.value));
-              setOffset(0);
-            })
-          }
-        >
-          {[50, 100, 200, 500].map((n) => (
-            <option key={n} value={n}>
-              {n} / page
-            </option>
-          ))}
-        </select>
-        <span
-          className="muted"
-          title={
-            page?.countTimedOut ? "Exact count timed out after 5s; showing an estimate" : undefined
-          }
-        >
-          {total == null ? "? rows" : (page?.totalExact ? "" : "≈") + formatCount(total) + " rows"}
-          {page?.countTimedOut && " ⏱"}
-        </span>
-        {page && !page.totalExact && (
-          <button
-            className="ghost"
-            onClick={() => setExactCount(true)}
-            title="Run count(*) (max 5s)"
-          >
-            exact
+            <Icon as={Plus} size={14} />
+            Insert row
           </button>
         )}
       </div>
@@ -419,8 +373,9 @@ export function TableData(props: { targetId: string; db: string; schema: string;
       {q.isError && <div className="error-banner">{q.error.message}</div>}
       {conflicts.size > 0 && (
         <div className="error-banner">
-          {conflicts.size} row(s) were changed by someone else since you loaded them; your edits
-          were not saved. <button onClick={() => void reloadConflicts()}>Reload rows</button>
+          {conflicts.size === 1 ? "A row was" : `${conflicts.size} rows were`} changed by someone
+          else after you loaded them, so those edits weren’t saved.{" "}
+          <button onClick={() => void reloadConflicts()}>Reload rows</button>
         </div>
       )}
       {writeError && !panel && <div className="error-banner">{writeError}</div>}
@@ -442,16 +397,22 @@ export function TableData(props: { targetId: string; db: string; schema: string;
             onSelectRow={(r) =>
               setPanel(r == null ? null : { kind: editable ? "edit" : "view", row: r })
             }
-            onRowNumberClick={(r, e) => {
-              if (editable && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-                setSelection((s) => {
-                  const n = new Set(s);
-                  if (n.has(r)) n.delete(r);
-                  else n.add(r);
-                  return n;
-                });
-              } else setPanel({ kind: editable ? "edit" : "view", row: r });
-            }}
+            selectable={editable}
+            selected={selection}
+            onToggleSelect={(r) =>
+              setSelection((s) => {
+                const n = new Set(s);
+                if (n.has(r)) n.delete(r);
+                else n.add(r);
+                return n;
+              })
+            }
+            onToggleAll={() =>
+              setSelection((s) =>
+                s.size === page.rows.length ? new Set() : new Set(page.rows.map((_, i) => i)),
+              )
+            }
+            onRowNumberClick={(r) => setPanel({ kind: editable ? "edit" : "view", row: r })}
             rowClassName={(r) =>
               (selection.has(r) ? "marked" : "") + (conflicts.has(r) ? " conflict" : "")
             }
@@ -484,7 +445,7 @@ export function TableData(props: { targetId: string; db: string; schema: string;
             }}
           />
         ) : (
-          <div className="pad muted">{q.isPending ? "Loading…" : ""}</div>
+          <div className="grid-loading">{q.isPending ? "Loading rows…" : ""}</div>
         )}
         {page && panel?.kind === "view" && page.rows[panel.row] && (
           <RowPanel
@@ -524,6 +485,82 @@ export function TableData(props: { targetId: string; db: string; schema: string;
           />
         )}
       </div>
+      <footer className="pager-bar">
+        <span
+          title={
+            page?.countTimedOut
+              ? "Counting took longer than 5 seconds; showing an estimate"
+              : undefined
+          }
+        >
+          {total == null
+            ? "Unknown row count"
+            : (page?.totalExact ? "" : "About ") + formatCount(total) + " rows"}
+        </span>
+        {page && !page.totalExact && (
+          <button
+            className="ghost small-btn"
+            onClick={() => setExactCount(true)}
+            title="Count exactly (up to 5 seconds)"
+          >
+            Count exactly
+          </button>
+        )}
+        {page && <span className="muted">· {page.durationMs} ms</span>}
+        <span className="spacer" />
+        <select
+          value={limit}
+          aria-label="Rows per page"
+          onChange={(e) =>
+            changeView(() => {
+              setLimit(Number(e.target.value));
+              setOffset(0);
+            })
+          }
+        >
+          {[50, 100, 200, 500].map((n) => (
+            <option key={n} value={n}>
+              {n} per page
+            </option>
+          ))}
+        </select>
+        <button
+          className="ghost icon-btn"
+          disabled={offset === 0}
+          onClick={() => changeView(() => setOffset(0))}
+          aria-label="First page"
+        >
+          <Icon as={ChevronsLeft} size={15} />
+        </button>
+        <button
+          className="ghost icon-btn"
+          disabled={offset === 0}
+          onClick={() => changeView(() => setOffset(Math.max(0, offset - limit)))}
+          aria-label="Previous page"
+        >
+          <Icon as={ChevronLeft} size={15} />
+        </button>
+        <span className="pager-pos">
+          Page {pageNo}
+          {pages != null && (page?.totalExact ? ` of ${pages}` : ` of about ${pages}`)}
+        </span>
+        <button
+          className="ghost icon-btn"
+          disabled={!hasNext}
+          onClick={() => changeView(() => setOffset(offset + limit))}
+          aria-label="Next page"
+        >
+          <Icon as={ChevronRight} size={15} />
+        </button>
+        <button
+          className="ghost icon-btn"
+          disabled={!hasNext || pages == null || !page?.totalExact}
+          onClick={() => pages && changeView(() => setOffset((pages - 1) * limit))}
+          aria-label="Last page"
+        >
+          <Icon as={ChevronsRight} size={15} />
+        </button>
+      </footer>
       {confirm && (
         <ConfirmDialog
           details={confirm.details}

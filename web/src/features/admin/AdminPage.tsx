@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import { EnvBadge } from "../shell/Pickers";
+import { EnvBadge } from "../../components/EnvBadge";
 
 interface AuditRecord {
   id: number;
@@ -35,6 +35,11 @@ const events = [
   "access_denied",
   "confirm_required",
 ];
+
+function oneLine(s: string) {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > 72 ? t.slice(0, 72) + "…" : t;
+}
 
 function AuditView() {
   const [draft, setDraft] = useState({ user: "", targetId: "", event: "", from: "", to: "" });
@@ -152,7 +157,7 @@ function AuditView() {
                     {a.object ? "\n" + a.object : ""}
                   </pre>
                 ) : (
-                  (a.sql ?? a.details ?? "").slice(0, 120)
+                  oneLine(a.sql ?? a.details ?? "")
                 )}
               </td>
             </tr>
@@ -372,7 +377,7 @@ export function AdminPage() {
           </button>
         ))}
         <span className="spacer" />
-        <a href="/">← Back to workspace</a>
+        <a href="/">Back to workspace</a>
       </div>
       <div className="admin-body">
         {tab === "audit" && <AuditView />}

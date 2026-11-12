@@ -1,3 +1,5 @@
+import { Plus, X } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useState } from "react";
 import type { GridColumn } from "./DataGrid";
 
@@ -105,7 +107,7 @@ export function FilterBuilder(p: {
             aria-label="Remove filter"
             onClick={() => setDrafts((ds) => ds.filter((_, j) => j !== i))}
           >
-            ×
+            <Icon as={X} size={15} />
           </button>
         </div>
       ))}
@@ -116,7 +118,8 @@ export function FilterBuilder(p: {
             setDrafts((ds) => [...ds, { column: p.columns[0]?.name ?? "", op: "eq", text: "" }])
           }
         >
-          + Condition
+          <Icon as={Plus} size={14} />
+          Add condition
         </button>
         <span className="spacer" />
         <button

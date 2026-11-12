@@ -10,7 +10,15 @@ export type Tab =
       name: string;
       sub: "data" | "structure";
     }
-  | { id: string; kind: "sql"; targetId: string; db: string; title: string };
+  | {
+      id: string;
+      kind: "sql";
+      targetId: string;
+      db: string;
+      title: string;
+      /** Text to start with instead of the saved draft. */
+      seed?: string;
+    };
 
 interface Persisted {
   targetId: string | null;
@@ -26,7 +34,8 @@ interface Workspace extends Persisted {
   selectTarget: (id: string | null) => void;
   selectDb: (db: string | null) => void;
   openTable: (schema: string, name: string) => void;
-  openSql: () => void;
+  openSql: (seed?: string) => void;
+  clearSeed: (id: string) => void;
   closeTab: (id: string) => void;
   activate: (id: string) => void;
   setSub: (id: string, sub: "data" | "structure") => void;
@@ -89,13 +98,19 @@ export const useWorkspace = create<Workspace>((set, get) => {
       const tab: Tab = { id: newId(), kind: "table", targetId, db, schema, name, sub: "data" };
       update({ tabs: [...tabs, tab], activeTab: tab.id });
     },
-    openSql: () => {
+    openSql: (seed) => {
       const { targetId, db, tabs } = get();
       if (!targetId || !db) return;
       const n = tabs.filter((t) => t.kind === "sql").length + 1;
-      const tab: Tab = { id: newId(), kind: "sql", targetId, db, title: "SQL " + n };
+      const tab: Tab = { id: newId(), kind: "sql", targetId, db, title: "Query " + n, seed };
       update({ tabs: [...tabs, tab], activeTab: tab.id });
     },
+    clearSeed: (id) =>
+      update({
+        tabs: get().tabs.map((t) =>
+          t.id === id && t.kind === "sql" ? { ...t, seed: undefined } : t,
+        ),
+      }),
     closeTab: (id) => {
       const { tabs, activeTab } = get();
       const i = tabs.findIndex((t) => t.id === id);

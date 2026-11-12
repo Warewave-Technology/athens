@@ -328,17 +328,19 @@ parameters. Request log: method, route, status, duration, user id.
 ## 13. Frontend
 
 Visual design from `docs/design/`. If a screen is missing in design, follow
-existing design language; default palette Gruvbox (light + dark).
+existing design language: the Aegean theme (ADR-019, light + dark + system).
 
 Screens / components:
 1. **Login redirect** — unauthenticated `/api` → 401; SPA redirects to
    `/auth/login?returnTo=<current>`.
-2. **Shell** — top bar (target selector grouped by namespace with environment
-   badge, database selector, user menu with email + logout, theme toggle),
-   resizable left sidebar (schema tree + search), main area with tabs.
+2. **Shell** — left sidebar: brand, connection card (server picker grouped by
+   namespace with environment badge, database picker; production gets the
+   laurel ring), table search (⌘K), schema tree, user row (theme, admin, sign
+   out). Main area: tab strip, per-tab header with `Data | Structure | SQL`.
 3. **Schema tree** — schemas → relations grouped by kind, row estimate badge,
    search box filters live; keyboard navigation.
-4. **Table tab** — sub-tabs `Data | Structure`.
+4. **Table tab** — segmented `Data | Structure | SQL` (SQL opens a query tab
+   seeded with `select * … limit 100`).
    - Data: virtualized grid (TanStack Table + Virtual), pagination bar, sort by
      header click (shift for multi), filter builder, NULL rendered distinctly,
      truncated cells with "load full value", side panel for row view/edit/insert,
@@ -402,5 +404,5 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
 - Target namespaces and group → rule mapping for the first deployment.
 - Whether `write` is ever granted on production targets (default: allowed
   but with mandatory confirmation, §7.3).
-- Design files to be placed under `docs/design/` (until then: Gruvbox
-  light/dark, dense pg-view-like layout).
+- Design files to be placed under `docs/design/` (until then: the Aegean
+  theme, ADR-019).

@@ -123,3 +123,16 @@ parameters whose parameter type OID is the column's type (`= ANY($n)` uses
 exactly as a cast would. `like/ilike` compare `col::text`. Generated SQL then
 contains only sanitized identifiers, fixed keywords and `$n` placeholders. The
 same applies to grid writes (M7).
+
+## ADR-019 Aegean visual design
+The first UI used Gruvbox with a top bar of selects and emoji glyphs; it read
+as a hobby tool. The owner asked for something premium but plain, using
+pg-view as the functional reference without copying its look. → Aegean theme:
+marble/limestone neutrals, one Aegean-blue accent, laurel gold reserved for
+environment warnings (the production ring on the connection card is the single
+loud element). IBM Plex Sans for UI and Plex Mono for data (self-hosted via
+@fontsource, so the CSP stays `default-src 'self'`), lucide icons. Layout: no
+top bar; the sidebar carries brand, connection card, ⌘K table search, tree and
+the user row; the main area has tabs and a `Data | Structure | SQL` segmented
+control per table. Light, dark and "match system" themes are tokens in
+`web/src/styles/theme.css`.

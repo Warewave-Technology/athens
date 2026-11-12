@@ -421,10 +421,13 @@ func (a *Authenticator) meta(r *http.Request) reqctx.Meta {
 }
 
 var errorTmpl = template.Must(template.New("e").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Sign-in problem · athens</title><style>body{font-family:system-ui,sans-serif;background:#fbf1c7;color:#3c3836;
-display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:36rem;padding:2rem;border:1px solid #d5c4a1;
-border-radius:8px;background:#f9f5d7}a{color:#076678}</style></head><body><main><h1>Sign-in problem</h1><p>{{.}}</p>
-<p><a href="/auth/login">Try again</a></p></main></body></html>`))
+<title>Sign-in problem · athens</title><style>body{font:14px/1.6 "IBM Plex Sans",system-ui,sans-serif;background:#f9f8f5;
+color:#1b1e24;display:grid;place-items:center;min-height:100vh;margin:0}main{max-width:32rem;padding:28px 32px;border:1px solid #e4e1d9;
+border-radius:14px;background:#fff}h1{font-size:18px;font-weight:600;margin:0 0 8px}p{color:#55534d}a{display:inline-block;
+margin-top:8px;padding:6px 14px;border-radius:7px;background:#1d5fa8;color:#fff;text-decoration:none;font-weight:500}
+@media (prefers-color-scheme:dark){body{background:#0d1320;color:#e7ebf2}main{background:#131b2b;border-color:#222d42}
+p{color:#b4bccb}a{background:#6fa8e8;color:#0d1320}}</style></head><body><main><h1>Sign-in problem</h1><p>{{.}}</p>
+<p><a href="/auth/login">Sign in again</a></p></main></body></html>`))
 
 func (a *Authenticator) errorPage(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+import { Icon } from "../../components/Icon";
 import { useState } from "react";
 import type { Cell, GridColumn } from "../grid/gridUtil";
 
@@ -155,7 +157,7 @@ export function RowEditor(p: {
           {insert ? "Insert" : "Save"}
         </button>
         <button className="ghost" aria-label="Close" onClick={p.onClose}>
-          ×
+          <Icon as={X} size={15} />
         </button>
       </div>
       {p.error && <div className="error-text pad">{p.error}</div>}
