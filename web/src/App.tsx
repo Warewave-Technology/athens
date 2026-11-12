@@ -3,6 +3,7 @@ import { useMe } from "./api/hooks";
 import { UserMenu } from "./components/UserMenu";
 import { DatabasePicker, TargetPicker } from "./features/shell/Pickers";
 import { Workspace } from "./features/shell/Workspace";
+import { AdminPage } from "./features/admin/AdminPage";
 import { useWorkspace } from "./store/workspace";
 import { applyTheme, initialTheme, type Theme } from "./theme";
 
@@ -16,6 +17,8 @@ export function App() {
     if (me.data) load(me.data.email);
   }, [me.data, load]);
 
+  const isAdminPage = window.location.pathname.startsWith("/admin");
+
   if (me.isPending) return <div className="center-screen muted">Loading…</div>;
   if (me.isError) return <div className="center-screen error-text">{me.error.message}</div>;
 
@@ -25,12 +28,13 @@ export function App() {
         <span className="brand">
           <img src="/favicon.svg" width={18} height={18} alt="" /> athens
         </span>
-        {loadedFor && (
+        {loadedFor && !isAdminPage && (
           <>
             <TargetPicker />
             <DatabasePicker />
           </>
         )}
+        {isAdminPage && <b>Admin</b>}
         {me.data.readOnlyGlobal && <span className="badge env-staging">global read-only</span>}
         <span className="spacer" />
         <button
@@ -42,7 +46,15 @@ export function App() {
         </button>
         <UserMenu me={me.data} />
       </header>
-      {loadedFor && <Workspace />}
+      {isAdminPage ? (
+        me.data.isAdmin ? (
+          <AdminPage />
+        ) : (
+          <div className="center-screen muted">Not found.</div>
+        )
+      ) : (
+        loadedFor && <Workspace />
+      )}
     </div>
   );
 }

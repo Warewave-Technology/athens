@@ -696,3 +696,50 @@ table.simple td.mono {
   background-color: color-mix(in srgb, var(--red) 22%, transparent);
   text-decoration: underline wavy var(--red);
 }
+
+.admin {
+  display: grid;
+  grid-template-rows: 30px 1fr;
+  min-height: 0;
+}
+
+.admin-body {
+  overflow: auto;
+  min-height: 0;
+}
+
+.admin-section {
+  padding: 10px 14px 30px;
+}
+
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.admin-table td {
+  font-size: 12px;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--bg-soft);
+}
+
+.audit-sql {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audit-sql pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}

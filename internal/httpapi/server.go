@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Warewave-Technology/athens/internal/audit"
@@ -45,14 +46,24 @@ type Deps struct {
 type Server struct {
 	Deps
 	api *http.ServeMux
+	// Routes lists every registered API pattern ("METHOD /api/v1/...").
+	Routes []string
+
+	once    sync.Once
+	handler http.Handler
 }
 
 func New(d Deps) *Server {
 	return &Server{Deps: d, api: http.NewServeMux()}
 }
 
-// Handler builds the full handler tree.
+// Handler returns the full handler tree (built once).
 func (s *Server) Handler() http.Handler {
+	s.once.Do(func() { s.handler = s.build() })
+	return s.handler
+}
+
+func (s *Server) build() http.Handler {
 	root := http.NewServeMux()
 	root.Handle("GET /healthz", route("GET /healthz", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -86,6 +97,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handle(pattern string, h func(http.ResponseWriter, *http.Request) error) {
 	method, p, _ := strings.Cut(pattern, " ")
 	full := method + " /api/v1" + p
+	s.Routes = append(s.Routes, full)
 	s.api.Handle(full, route(full, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := h(w, r); err != nil {
 			if _, ok := err.(*httpx.Error); !ok {
@@ -100,6 +112,7 @@ func (s *Server) routes() {
 	s.handle("GET /me", s.me)
 	s.handle("GET /admin/discovery", s.adminDiscovery)
 	s.handle("GET /admin/pools", s.adminPools)
+	s.handle("GET /admin/audit", s.adminAudit)
 	s.handle("GET /targets", s.listTargets)
 	s.handle("GET /targets/{ns}/{name}/databases", s.listDatabases)
 	const db = "/targets/{ns}/{name}/db/{db}"
