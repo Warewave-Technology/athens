@@ -21,6 +21,7 @@
   --text-2: #55534d;
   --text-3: #8a877e; /* pumice */
   --accent: #1d5fa8; /* aegean */
+  --accent-fill: #1d5fa8;
   --accent-hover: #174f8d;
   --accent-soft: #e7eef7;
   --accent-text: #1a5496;
@@ -29,6 +30,7 @@
   --laurel-soft: #f5eedb;
   --laurel-text: #7a5e1b;
   --danger: #b3372b;
+  --danger-fill: #b3372b;
   --danger-soft: #f8e7e4;
   --success: #3b7553;
   --success-soft: #e5f0e9;
@@ -47,38 +49,41 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0d1320; /* night sea */
-  --surface: #131b2b;
-  --sidebar: #0f1626;
-  --subtle: #1b2538;
-  --line: #222d42;
-  --line-strong: #2f3c55;
-  --text: #e7ebf2;
-  --text-2: #b4bccb;
-  --text-3: #7d889c;
-  --accent: #6fa8e8;
-  --accent-hover: #8cbbef;
-  --accent-soft: #17294a;
-  --accent-text: #8cbbef;
-  --on-accent: #0d1320;
-  --laurel: #d3b062;
-  --laurel-soft: #2c2616;
-  --laurel-text: #dcbd75;
-  --danger: #ec7d6f;
-  --danger-soft: #3a1d1c;
+  /* Aegean night: neutral charcoal, the Aegean blue only as accent */
+  --bg: #111214;
+  --surface: #18191c;
+  --sidebar: #0e0f11;
+  --subtle: #232529;
+  --line: #2c2e33;
+  --line-strong: #3a3d44;
+  --text: #e6e7ea;
+  --text-2: #a3a6ae;
+  --text-3: #80848e;
+  --accent: #5b9be6; /* outlines, focus, resize handles */
+  --accent-fill: #3a78c4; /* solid buttons, brand mark: white text passes AA */
+  --accent-hover: #4686d4;
+  --accent-soft: #1b2a40;
+  --accent-text: #8dbbf0;
+  --on-accent: #ffffff;
+  --laurel: #d4b26a;
+  --laurel-soft: #2a2416;
+  --laurel-text: #dcbf7e;
+  --danger: #f08a7e;
+  --danger-fill: #c4473b;
+  --danger-soft: #3a1f1d;
   --success: #7cc49a;
-  --success-soft: #16301f;
-  --selection: #1f3557;
-  --dirty: #332b14;
-  --null: #5c6679;
-  --focus: 0 0 0 3px rgba(111, 168, 232, 0.3);
-  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --syn-keyword: #7fb2ec;
-  --syn-string: #8ccaa3;
-  --syn-number: #c79ae0;
-  --syn-comment: #6c778b;
-  --syn-type: #d3b062;
-  --syn-fn: #6cc4cc;
+  --success-soft: #17281e;
+  --selection: #1b2a40;
+  --dirty: #2f2814;
+  --null: #747882;
+  --focus: 0 0 0 3px rgba(91, 155, 230, 0.35);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --syn-keyword: #82b4ee;
+  --syn-string: #9bcf9f;
+  --syn-number: #d1a3e8;
+  --syn-comment: #6c717b;
+  --syn-type: #d4b26a;
+  --syn-fn: #7fcfd6;
   color-scheme: dark;
 }
 
@@ -149,9 +154,6 @@ button {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background 120ms,
-    border-color 120ms;
 }
 
 button:hover:not(:disabled) {
@@ -164,8 +166,8 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
   color: var(--on-accent);
 }
 
@@ -175,13 +177,13 @@ button.primary:hover:not(:disabled) {
 }
 
 button.danger {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
   color: #fff;
 }
 
 button.danger:hover:not(:disabled) {
-  background: var(--danger);
+  background: var(--danger-fill);
   filter: brightness(1.08);
 }
 

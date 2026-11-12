@@ -136,3 +136,10 @@ top bar; the sidebar carries brand, connection card, ⌘K table search, tree and
 the user row; the main area has tabs and a `Data | Structure | SQL` segmented
 control per table. Light, dark and "match system" themes are tokens in
 `web/src/styles/theme.css`.
+Dark theme ("Aegean night", revised after review): the first dark palette was
+a saturated navy with weak contrast. It is now a neutral charcoal
+(`#111214`/`#18191c`) with the Aegean blue only as accent; solid fills use a
+darker `--accent-fill` / `--danger-fill` so white labels pass WCAG AA, and
+body/secondary/tertiary text measure 14.2 / 7.2 / 4.7:1 on the surface. Theme
+tokens carry no colour transitions: Safari kept stale colours on transitioned
+elements after a theme switch.

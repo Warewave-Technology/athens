@@ -117,9 +117,18 @@ export const useWorkspace = create<Workspace>((set, get) => {
       const next = tabs.filter((t) => t.id !== id);
       const active =
         activeTab === id ? (next[Math.min(i, next.length - 1)]?.id ?? null) : activeTab;
-      update({ tabs: next, activeTab: active });
+      const focus = next.find((t) => t.id === active);
+      update({
+        tabs: next,
+        activeTab: active,
+        ...(focus ? { targetId: focus.targetId, db: focus.db } : {}),
+      });
     },
-    activate: (id) => update({ activeTab: id }),
+    // The sidebar (connection card and tree) follows the active tab.
+    activate: (id) => {
+      const tab = get().tabs.find((t) => t.id === id);
+      update({ activeTab: id, ...(tab ? { targetId: tab.targetId, db: tab.db } : {}) });
+    },
     setSub: (id, sub) =>
       update({
         tabs: get().tabs.map((t) => (t.id === id && t.kind === "table" ? { ...t, sub } : t)),
