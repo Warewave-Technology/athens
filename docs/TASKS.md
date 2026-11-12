@@ -49,12 +49,12 @@ sts in a live kind cluster updates the registry within 2s; RBAC with
 secrets `get` only is sufficient (e2e runs with chart-generated Roles).
 
 ## M3 — Authz, pools, catalog
-- [ ] `internal/authz`: `Effective(user, target, db) Level` (none/read/write), glob matching, admin check, global readOnly; table-driven tests incl. overlapping rules
-- [ ] `internal/pgconn`: pool manager (§6.2), per-query tx wrapper (§6.3) as `Run(ctx, key, level, fn)`, auth-failure re-resolve + retry once, close on target removal, pool metrics
-- [ ] `internal/catalog`: schemas, relations (incl. partitions under parent, editable flag), structure (§9) — pg_catalog only, tested on PG 13 and 16
-- [ ] Endpoints: `/targets`, `/targets/{tid}/databases`, catalog endpoints (API.md)
-- [ ] Target `status` via cheap periodic check (`SELECT 1` every 60s only for targets with an open pool; else `unknown`)
-- [ ] Frontend: shell layout, target+database selectors (grouped by namespace, env badge), schema tree with search, Structure tab
+- [x] `internal/authz`: `Effective(user, target, db) Level` (none/read/write), glob matching, admin check, global readOnly; table-driven tests incl. overlapping rules
+- [x] `internal/pgconn`: pool manager (§6.2), per-query tx wrapper (§6.3) as `Run(ctx, key, level, fn)`, auth-failure re-resolve + retry once, close on target removal, pool metrics
+- [x] `internal/catalog`: schemas, relations (incl. partitions under parent, editable flag), structure (§9) — pg_catalog only, tested on PG 13 and 16
+- [x] Endpoints: `/targets`, `/targets/{tid}/databases`, catalog endpoints (API.md)
+- [x] Target `status` via cheap periodic check (`SELECT 1` every 60s only for targets with an open pool; else `unknown`)
+- [x] Frontend: shell layout, target+database selectors (grouped by namespace, env badge), schema tree with search, Structure tab
 
 **Accept:** user without matching rule gets 404 for target and it is absent
 from `/targets`; `application_name` visible in `pg_stat_activity` as

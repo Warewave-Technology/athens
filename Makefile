@@ -29,7 +29,8 @@ dev: web/node_modules
 	@trap 'kill 0' EXIT; \
 	(cd web && pnpm dev) & \
 	go run ./hack/mockidp & \
-	go run ./cmd/athens --dev --config $${ATHENS_CONFIG:-hack/dev/config.yaml}; \
+	cfg=hack/dev/config.yaml; [ -f hack/dev/config.local.yaml ] && cfg=hack/dev/config.local.yaml; \
+	go run ./cmd/athens --dev --kubeconfig $${KUBECONFIG:-hack/kind/.kube/config} --config $${ATHENS_CONFIG:-$$cfg}; \
 	wait
 
 test:

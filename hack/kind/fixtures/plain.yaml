@@ -1,0 +1,100 @@
+# Plain Postgres workloads for the generic source (DISCOVERY §4.4).
+apiVersion: v1
+kind: Namespace
+metadata: {name: athens-demo}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: orders-db, namespace: athens-demo}
+stringData: {user: orders, password: orders-pw-e2e, db: orders}
+---
+# official image, credentials from secretKeyRef
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: orders-db, namespace: athens-demo}
+spec:
+  serviceName: orders-db
+  selector: {matchLabels: {app: orders-db}}
+  template:
+    metadata: {labels: {app: orders-db}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{name: postgres, containerPort: 5432}]
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: orders-db, key: user}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: orders-db, key: password}}
+            - name: POSTGRES_DB
+              valueFrom: {secretKeyRef: {name: orders-db, key: db}}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, orders]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: orders-db, namespace: athens-demo}
+spec:
+  selector: {app: orders-db}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]
+---
+# official image, literal password in the pod spec (warning expected)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: scratch-db, namespace: athens-demo}
+spec:
+  selector: {matchLabels: {app: scratch-db}}
+  template:
+    metadata: {labels: {app: scratch-db}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13-alpine
+          env:
+            - {name: POSTGRES_PASSWORD, value: scratch-literal-pw}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, postgres]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: scratch-db, namespace: athens-demo}
+spec:
+  selector: {app: scratch-db}
+  ports: [{port: 5432}]
+---
+# _FILE credentials on a secret volume (bitnami-like)
+apiVersion: v1
+kind: Secret
+metadata: {name: files-db, namespace: athens-demo}
+stringData: {password: files-pw-e2e}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: files-db, namespace: athens-demo}
+spec:
+  serviceName: files-db-hl
+  selector: {matchLabels: {app: files-db}}
+  template:
+    metadata: {labels: {app: files-db}}
+    spec:
+      volumes:
+        - name: creds
+          secret: {secretName: files-db}
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/db/password}
+          volumeMounts:
+            - {name: creds, mountPath: /run/secrets/db, readOnly: true}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, postgres]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: files-db-hl, namespace: athens-demo}
+spec:
+  clusterIP: None
+  selector: {app: files-db}
+  ports: [{port: 5432}]

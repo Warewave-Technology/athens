@@ -10,3 +10,4 @@ web/dist/*
 .DS_Store
 /hack/kind/.kube/
 /athens-dev.db*
+/hack/dev/config.local.yaml

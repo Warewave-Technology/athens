@@ -20,7 +20,7 @@ authz:
       namespaces: ["*"]
       level: write
 discovery:
-  namespaces: ["default"]
+  namespaces: ["athens-demo"]
 store:
   path: "./athens-dev.db"
 log:

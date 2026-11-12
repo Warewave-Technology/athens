@@ -132,3 +132,16 @@ func TestRuleValidationAggregates(t *testing.T) {
 		}
 	}
 }
+
+func TestDevHostOverridesNeedInsecureDev(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "c.yaml")
+	if err := os.WriteFile(f, []byte("server:\n  devHostOverrides: {\"a.svc:5432\": \"127.0.0.1:1\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(f, validEnv()); err == nil || !strings.Contains(err.Error(), "devHostOverrides") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := Load(f, append(validEnv(), "ATHENS_SERVER_INSECUREDEV=true", "ATHENS_SERVER_BASEURL=http://x")); err != nil {
+		t.Fatal(err)
+	}
+}

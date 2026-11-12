@@ -55,6 +55,9 @@ type Server struct {
 	BaseURL        string   `yaml:"baseURL"`
 	TrustedProxies []string `yaml:"trustedProxies"`
 	InsecureDev    bool     `yaml:"insecureDev"`
+	// DevHostOverrides maps "host:port" of discovered targets to another
+	// address (e.g. a kubectl port-forward). Only allowed with insecureDev.
+	DevHostOverrides map[string]string `yaml:"devHostOverrides"`
 }
 
 type OIDC struct {
@@ -325,6 +328,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.Listen == "" {
 		add("server.listen is required")
+	}
+	if len(c.Server.DevHostOverrides) > 0 && !c.Server.InsecureDev {
+		add("server.devHostOverrides is only allowed with server.insecureDev=true")
 	}
 	for _, cidr := range c.Server.TrustedProxies {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {

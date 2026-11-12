@@ -60,6 +60,9 @@ type Options struct {
 	IdleClose time.Duration
 	// ConnectTimeout per connection attempt (default 5s).
 	ConnectTimeout time.Duration
+	// DialOverrides redirects "host:port" to another address (local
+	// development only, server.devHostOverrides).
+	DialOverrides map[string]string
 }
 
 type pool struct {
@@ -364,6 +367,24 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 			return nil, err
 		}
 		cc.TLSConfig, cc.Fallbacks = tc, nil
+	}
+	if len(m.opt.DialOverrides) > 0 {
+		d := &net.Dialer{Timeout: m.opt.ConnectTimeout}
+		lookup := cc.LookupFunc
+		cc.LookupFunc = func(ctx context.Context, host string) ([]string, error) {
+			for k := range m.opt.DialOverrides {
+				if h, _, _ := net.SplitHostPort(k); h == host {
+					return []string{host}, nil // resolved by DialFunc
+				}
+			}
+			return lookup(ctx, host)
+		}
+		cc.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if to, ok := m.opt.DialOverrides[addr]; ok {
+				addr = to
+			}
+			return d.DialContext(ctx, network, addr)
+		}
 	}
 	cc.OnNotice = func(pc *pgconn.PgConn, n *pgconn.Notice) {
 		if v, ok := m.notices.Load(pc); ok {

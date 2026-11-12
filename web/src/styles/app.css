@@ -57,3 +57,221 @@ a.menu-item:hover,
 button.menu-item:hover {
   background: var(--bg1);
 }
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker select {
+  max-width: 280px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.workspace {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-empty {
+  padding: 12px;
+}
+
+.resizer {
+  cursor: col-resize;
+  background: var(--bg1);
+}
+
+.resizer:hover {
+  background: var(--accent);
+}
+
+.main {
+  display: grid;
+  grid-template-rows: 30px 1fr;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--bg2);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 10px;
+  border-right: 1px solid var(--bg2);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--fg-soft);
+}
+
+.tab.active {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.tab .close {
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.new-tab {
+  margin-left: 4px;
+}
+
+.tab-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.schema-tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.tree-search {
+  margin: 6px;
+}
+
+.tree-list {
+  overflow: auto;
+  flex: 1;
+  outline: none;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding-right: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tree-row:hover {
+  background: var(--bg1);
+}
+
+.tree-list:focus .tree-row.cursor {
+  background: var(--selection);
+}
+
+.tree-row .caret {
+  width: 10px;
+  color: var(--fg-muted);
+}
+
+.tree-row .rel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kind-icon {
+  color: var(--aqua);
+  width: 12px;
+  text-align: center;
+}
+
+.count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+h3 .count {
+  margin-left: 6px;
+}
+
+.pad {
+  padding: 10px 12px;
+}
+
+.table-tab {
+  display: grid;
+  grid-template-rows: 28px 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.subtabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--bg1);
+}
+
+.subtabs button.active {
+  background: var(--bg1);
+  font-weight: 600;
+}
+
+.subtab-ctx {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.subtab-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.structure {
+  padding: 8px 14px 24px;
+}
+
+.struct-section h3 {
+  font-size: 13px;
+  margin: 16px 0 6px;
+}
+
+table.simple {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.simple th,
+table.simple td {
+  text-align: left;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--bg1);
+  vertical-align: top;
+}
+
+table.simple th {
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+table.simple td.nowrap,
+table.simple td.mono {
+  white-space: nowrap;
+}

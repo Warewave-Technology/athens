@@ -6,7 +6,12 @@ export function UserMenu({ me }: { me: Me }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="user-menu">
-      <button className="ghost" onClick={() => setOpen((o) => !o)} aria-expanded={open} title={me.email}>
+      <button
+        className="ghost"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={me.email}
+      >
         {me.name || me.email} ▾
       </button>
       {open && (

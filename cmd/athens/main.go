@@ -106,6 +106,7 @@ func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logg
 
 	pools := pgconn.NewManager(pgconn.Options{
 		Targets: registry, Resolver: credentials.NewResolver(kc.client, disc), Limits: cfg.Limits, Log: log,
+		DialOverrides: cfg.Server.DevHostOverrides,
 	})
 	registry.OnChange(pools.TargetChanged)
 	bg.Go(func() { pools.Maintain(bgCtx) })
