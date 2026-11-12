@@ -3,9 +3,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call: # the release workflow runs the full suite before publishing
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -15,6 +20,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: web/pnpm-lock.yaml }
       - run: cd web && pnpm install --frozen-lockfile
@@ -22,11 +28,13 @@ jobs:
         with: { version: latest }
       - run: cd web && pnpm lint && pnpm typecheck
       - uses: azure/setup-helm@v4
-      - name: helm lint + kubeconform
+      - name: helm lint + kubeconform (cluster-wide and namespaced)
         run: |
           go install github.com/yannh/kubeconform/cmd/kubeconform@latest
+          kc="$(go env GOPATH)/bin/kubeconform -strict -summary -ignore-missing-schemas"
           helm lint deploy/helm/athens -f deploy/helm/athens/ci-values.yaml
-          helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml | $(go env GOPATH)/bin/kubeconform -strict -summary -ignore-missing-schemas
+          helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml | $kc
+          helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml --set 'config.discovery.namespaces={payments,orders}' | $kc
 
   test:
     runs-on: ubuntu-latest
@@ -35,13 +43,14 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: web/pnpm-lock.yaml }
       - run: cd web && pnpm install --frozen-lockfile
       - run: make test
 
   integration:
-    runs-on: ubuntu-latest # docker is available on the runner for testcontainers
+    runs-on: ubuntu-latest # Docker is available on the runner for testcontainers
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -54,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make image IMAGE=athens:ci
-      - name: image size
+      - name: image size (max 40 MB)
         run: docker image inspect athens:ci --format '{{.Size}}' | awk '{ printf "%.1f MB\n", $1/1048576; if ($1 > 40*1048576) exit 1 }'
       - uses: aquasecurity/trivy-action@0.33.1
         with:
@@ -66,7 +75,8 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [lint, test]
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4

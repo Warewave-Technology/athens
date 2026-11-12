@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS web
+# Web and Go stages run on the build platform and cross-compile, so
+# multi-arch images build without emulation.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
@@ -7,10 +9,10 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
-FROM golang:1.26-alpine AS go
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS go
 WORKDIR /src
-ARG VERSION=dev COMMIT=none DATE=unknown
-ENV CGO_ENABLED=0 GOFLAGS=-trimpath
+ARG VERSION=dev COMMIT=none DATE=unknown TARGETOS TARGETARCH
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOOS=$TARGETOS GOARCH=$TARGETARCH
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

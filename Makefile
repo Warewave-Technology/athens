@@ -33,12 +33,13 @@ dev: web/node_modules
 	go run ./cmd/athens --dev --kubeconfig $${KUBECONFIG:-hack/kind/.kube/config} --config $${ATHENS_CONFIG:-$$cfg}; \
 	wait
 
+# The race detector needs cgo on Linux; only the shipped binary is cgo-free.
 test:
-	go test -race -count=1 ./...
+	CGO_ENABLED=1 go test -race -count=1 ./...
 	cd web && pnpm test
 
 test-int:
-	go test -race -count=1 -tags integration -timeout 20m ./...
+	CGO_ENABLED=1 go test -race -count=1 -tags integration -timeout 20m ./...
 
 e2e:
 	./hack/kind/e2e.sh

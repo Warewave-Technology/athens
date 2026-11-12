@@ -204,8 +204,15 @@ settings: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 ### 4. Install the chart
 
 ```bash
-helm upgrade --install athens deploy/helm/athens -n athens -f values.yaml
+helm upgrade --install athens oci://ghcr.io/warewave-technology/charts/athens --version 0.1.0 -n athens -f values.yaml
 ```
+
+The chart installs the image `ghcr.io/warewave-technology/athens` of the same
+version (linux/amd64 and linux/arm64). Releases are listed on the
+[releases page](https://github.com/Warewave-Technology/athens/releases); every
+image is signed with cosign (keyless), and the release notes show the
+`cosign verify` command. To install from a checkout instead, use
+`deploy/helm/athens` as the chart.
 
 ```bash
 kubectl -n athens rollout status deploy/athens
@@ -361,6 +368,28 @@ Requirements: Go 1.26+, Node 22+ with pnpm, Docker, kind, helm.
 | `make e2e` | kind cluster with CNPG, Zalando, Bitnami and plain fixtures, plus the end-to-end suite |
 | `make lint` | golangci-lint, eslint, tsc, helm lint and kubeconform |
 | `make image` | distroless container image |
+
+### Releasing
+
+CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests, an
+image build with a size limit and a Trivy scan on every push and pull
+request, and the kind end-to-end suite on pushes to `main`. A tag starts the
+release workflow, which runs the full CI first:
+
+```bash
+git tag -a v0.2.0 -m "athens 0.2.0" && git push origin v0.2.0
+```
+
+The release workflow (`.github/workflows/release.yml`) then:
+1. builds the multi-arch image and pushes it to `ghcr.io/warewave-technology/athens`
+   as `0.2.0`, `0.2` and `latest`, with SBOM and provenance, and signs it with
+   cosign;
+2. packages the Helm chart with the tag as chart and app version and pushes
+   it to `oci://ghcr.io/warewave-technology/charts/athens`;
+3. creates a GitHub release with the chart archive and generated notes.
+
+Tags with a suffix (`v0.2.0-rc.1`) become pre-releases and do not move
+`latest`.
 
 Code layout and working rules: [CLAUDE.md](CLAUDE.md) and
 [docs/TASKS.md](docs/TASKS.md).
