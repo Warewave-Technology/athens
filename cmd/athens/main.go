@@ -24,9 +24,11 @@ import (
 	"github.com/Warewave-Technology/athens/internal/auth"
 	"github.com/Warewave-Technology/athens/internal/authz"
 	"github.com/Warewave-Technology/athens/internal/config"
+	"github.com/Warewave-Technology/athens/internal/credentials"
 	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpapi"
 	"github.com/Warewave-Technology/athens/internal/metrics"
+	"github.com/Warewave-Technology/athens/internal/pgconn"
 	"github.com/Warewave-Technology/athens/internal/store"
 	"github.com/Warewave-Technology/athens/internal/version"
 	"github.com/Warewave-Technology/athens/web"
@@ -102,6 +104,12 @@ func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logg
 	})
 	bg.Go(func() { disc.Run(bgCtx, 60*time.Second) })
 
+	pools := pgconn.NewManager(pgconn.Options{
+		Targets: registry, Resolver: credentials.NewResolver(kc.client, disc), Limits: cfg.Limits, Log: log,
+	})
+	registry.OnChange(pools.TargetChanged)
+	bg.Go(func() { pools.Maintain(bgCtx) })
+
 	spa := httpapi.SPAHandler(web.Dist())
 	if dev {
 		if spa, err = httpapi.DevProxy(devURL); err != nil {
@@ -109,7 +117,7 @@ func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logg
 		}
 	}
 	srv := httpapi.New(httpapi.Deps{
-		Config: cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, Registry: registry,
+		Config: cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, Registry: registry, Pools: pools,
 		SPA: spa, Dev: dev, Ready: disc.Synced,
 	})
 

@@ -14,6 +14,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/config"
 	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpx"
+	"github.com/Warewave-Technology/athens/internal/pgconn"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
 	"github.com/Warewave-Technology/athens/internal/store"
 	"github.com/Warewave-Technology/athens/internal/version"
@@ -30,6 +31,7 @@ type Deps struct {
 	Authz    *authz.Authorizer
 	Audit    *audit.Writer
 	Registry *discovery.Registry
+	Pools    *pgconn.Manager
 	SPA      http.Handler
 	// Dev relaxes the CSP for the Vite dev server (--dev).
 	Dev bool
@@ -95,6 +97,13 @@ func (s *Server) handle(pattern string, h func(http.ResponseWriter, *http.Reques
 func (s *Server) routes() {
 	s.handle("GET /me", s.me)
 	s.handle("GET /admin/discovery", s.adminDiscovery)
+	s.handle("GET /admin/pools", s.adminPools)
+	s.handle("GET /targets", s.listTargets)
+	s.handle("GET /targets/{ns}/{name}/databases", s.listDatabases)
+	const db = "/targets/{ns}/{name}/db/{db}"
+	s.handle("GET "+db+"/schemas", s.listSchemas)
+	s.handle("GET "+db+"/relations", s.listRelations)
+	s.handle("GET "+db+"/relations/{schema}/{rel}/structure", s.structure)
 	s.handle("GET /version", func(w http.ResponseWriter, _ *http.Request) error {
 		httpx.WriteJSON(w, http.StatusOK, version.Get())
 		return nil

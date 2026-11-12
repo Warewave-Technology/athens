@@ -285,17 +285,32 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		a.errorPage(w, http.StatusInternalServerError, "Sign-in failed due to an internal error.")
 		return
 	}
-	cookie, csrf := randomToken(32), randomToken(32)
-	m := reqctx.MetaFrom(ctx)
-	sess := store.Session{
-		ID: hashToken(cookie), UserID: user.ID, Groups: user.Groups, CSRFToken: csrf, CreatedAt: now, LastSeenAt: now,
-		ExpiresAt: now.Add(a.cfg.Auth.SessionTTL.D()), ClientIP: m.ClientIP, UserAgent: truncate(m.UserAgent, 512),
-	}
-	if err := a.store.CreateSession(ctx, sess); err != nil {
+	cookie, csrf, err := a.StartSession(ctx, user)
+	if err != nil {
 		a.log.Error("create session", "err", err)
 		a.errorPage(w, http.StatusInternalServerError, "Sign-in failed due to an internal error.")
 		return
 	}
+	a.setSessionCookies(w, cookie, csrf)
+	metrics.AuthLogins.WithLabelValues("ok").Inc()
+	a.audit.Write(reqctx.WithUser(ctx, user), store.AuditRecord{Event: audit.EventLogin, Result: audit.ResultOK})
+	http.Redirect(w, r, st.ReturnTo, http.StatusFound)
+}
+
+// StartSession stores a new session for user (who must exist in the store)
+// and returns the cookie value and CSRF token.
+func (a *Authenticator) StartSession(ctx context.Context, user *reqctx.User) (cookie, csrf string, err error) {
+	now := a.now()
+	cookie, csrf = randomToken(32), randomToken(32)
+	m := reqctx.MetaFrom(ctx)
+	err = a.store.CreateSession(ctx, store.Session{
+		ID: hashToken(cookie), UserID: user.ID, Groups: user.Groups, CSRFToken: csrf, CreatedAt: now, LastSeenAt: now,
+		ExpiresAt: now.Add(a.cfg.Auth.SessionTTL.D()), ClientIP: m.ClientIP, UserAgent: truncate(m.UserAgent, 512),
+	})
+	return cookie, csrf, err
+}
+
+func (a *Authenticator) setSessionCookies(w http.ResponseWriter, cookie, csrf string) {
 	maxAge := int(a.cfg.Auth.SessionTTL.D().Seconds())
 	// Secure is false only with server.insecureDev (plain-http local development).
 	// The CSRF cookie must be readable by the SPA (double submit, SPEC §5.4).
@@ -303,9 +318,6 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: version.SessionCookie, Value: cookie, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode})
 	// #nosec G124 -- see above
 	http.SetCookie(w, &http.Cookie{Name: version.CSRFCookie, Value: csrf, Path: "/", MaxAge: maxAge, HttpOnly: false, Secure: a.secure, SameSite: http.SameSiteLaxMode})
-	metrics.AuthLogins.WithLabelValues("ok").Inc()
-	a.audit.Write(reqctx.WithUser(ctx, user), store.AuditRecord{Event: audit.EventLogin, Result: audit.ResultOK})
-	http.Redirect(w, r, st.ReturnTo, http.StatusFound)
 }
 
 func (a *Authenticator) userFromClaims(c idClaims) (*reqctx.User, error) {
