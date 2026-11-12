@@ -8,7 +8,7 @@ export function Brand() {
   return (
     <a className="brand" href="/">
       <img className="brand-mark" src="/favicon.svg" alt="" />
-      athens
+      Athens
     </a>
   );
 }

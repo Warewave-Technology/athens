@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="docs/assets/athens-icon.svg" alt="" width="96" height="96">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/athens-logo-dark.svg">
+    <img src="docs/assets/brand/athens-logo-light.svg" alt="Athens" width="360">
+  </picture>
 </p>
-
-<h1 align="center">athens</h1>
 
 <p align="center">
   PostgreSQL web client for Kubernetes, with Microsoft Entra ID sign-in,<br>
