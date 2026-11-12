@@ -1,0 +1,15 @@
+# Known non-secrets: dev/test fixture keys labelled as such, and an API doc
+# line gitleaks mistakes for a key. Real credentials never live in this repo.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "dev and test fixtures"
+paths = [
+  '''deploy/helm/athens/ci-values\.yaml''',
+  '''hack/dev/config\.yaml''',
+  '''hack/kind/values-e2e\.yaml''',
+  '''internal/.*_test\.go''',
+]
+regexTarget = "line"
+regexes = ['''per key: total/idle/acquired conns''']

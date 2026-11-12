@@ -196,7 +196,7 @@ func TestEndToEnd(t *testing.T) {
 
 	t.Run("read-only credential and enforcement", func(t *testing.T) {
 		var out struct{ Rows [][]*string }
-		if code := reader.do(http.MethodPost, tpath("athens-demo/legacy-crm")+"/db/crm/query", map[string]any{"sql": "select current_user"}, &out); code != 200 || *out.Rows[0][0] != "crm_ro" {
+		if code := reader.do(http.MethodPost, tpath("athens-demo/legacy-crm")+"/db/crm/query", map[string]any{"sql": "select session_user"}, &out); code != 200 || *out.Rows[0][0] != "crm_ro" {
 			t.Fatalf("reader on legacy-crm: %d %v", code, out.Rows)
 		}
 		if code := reader.do(http.MethodPost, tpath("athens-demo/legacy-crm")+"/db/crm/query", map[string]any{"sql": "update accounts set name = name"}, nil); code != 403 {

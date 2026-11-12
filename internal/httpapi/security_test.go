@@ -97,3 +97,44 @@ func TestAuditBoundsAndExportDefused(t *testing.T) {
 		t.Fatalf("formula cells not defused: %q %q", rows[1][9], rows[1][10])
 	}
 }
+
+func TestUserByteBudget(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	w := h.login("w@example.com", "writers")
+	big := strings.Repeat("x", 256<<10)
+	var small struct{ ID int64 }
+	w.do(http.MethodPost, "/api/v1/saved-queries", map[string]any{"name": "small", "sql": "x"}).json(t, &small)
+	var bigID struct{ ID int64 }
+	created := 0
+	for i := range 80 {
+		r := w.do(http.MethodPost, "/api/v1/saved-queries", map[string]any{"name": fmt.Sprintf("big%d", i), "sql": big})
+		if r.status == 409 {
+			if r.errCode() != "limit_reached" {
+				t.Fatalf("409 for another reason: %s", r.body)
+			}
+			break
+		}
+		if r.status != 201 {
+			t.Fatalf("create: %d %s", r.status, r.body)
+		}
+		r.json(t, &bigID)
+		created++
+	}
+	if created == 0 || created >= 80 {
+		t.Fatalf("budget not enforced on create (%d created)", created)
+	}
+	// fill the rest with 64 KiB items, leaving less than 64 KiB of headroom
+	for i := range 10 {
+		if r := w.do(http.MethodPost, "/api/v1/saved-queries", map[string]any{"name": fmt.Sprintf("mid%d", i), "sql": strings.Repeat("m", 64<<10)}); r.status == 409 {
+			break
+		}
+	}
+	// growing an existing item is checked as well (by its size difference)
+	if r := w.do(http.MethodPut, fmt.Sprintf("/api/v1/saved-queries/%d", small.ID), map[string]any{"name": "small", "sql": big}); r.status != 409 {
+		t.Fatalf("grow small to 256 KiB at the budget: %d", r.status)
+	}
+	// rewriting an item at the same size is not growth
+	if r := w.do(http.MethodPut, fmt.Sprintf("/api/v1/saved-queries/%d", bigID.ID), map[string]any{"name": "big-renamed", "sql": strings.Repeat("y", 256<<10)}); r.status != 200 {
+		t.Fatalf("same-size update at the budget: %d %s", r.status, r.body)
+	}
+}

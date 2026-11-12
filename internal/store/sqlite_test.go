@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -158,5 +159,37 @@ func TestAuditAppendOnlyAndFilter(t *testing.T) {
 	}
 	if n, err := s.PurgeAudit(ctx, time.Now().AddDate(0, 0, -90)); err != nil || n != 1 {
 		t.Fatalf("purge %d %v", n, err)
+	}
+}
+
+func TestHistoryByteTrimAndUserItems(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if err := s.UpsertUser(ctx, User{ID: "u1", Email: "u@x"}); err != nil {
+		t.Fatal(err)
+	}
+	big := strings.Repeat("x", 7<<20)
+	for i := range 3 {
+		if _, err := s.AddHistory(ctx, HistoryItem{UserID: "u1", SQL: big, Class: "read", Result: "ok", CreatedAt: time.Now().Add(time.Duration(i) * time.Second)}, 500); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ListHistory(ctx, "u1", HistoryFilter{Limit: 10})
+	if err != nil || len(items) != 2 {
+		t.Fatalf("history kept %d items (want 2 within 16 MiB): %v", len(items), err)
+	}
+	if _, err := s.CreateSavedQuery(ctx, SavedQuery{UserID: "u1", Name: "a", SQL: "select 1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutDraft(ctx, "u1", "ns/t", "db", "select 22"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutUIState(ctx, "u1", "k", `{"a":"çş"}`); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.UserItems(ctx, "u1")
+	// bytes, not characters: "çş" is 4 bytes
+	if err != nil || u.Saved != 1 || u.Drafts != 1 || u.UIState != 1 || u.Bytes != int64(len("select 1")+len("select 22")+len(`{"a":"çş"}`)) {
+		t.Fatalf("user items %+v %v", u, err)
 	}
 }

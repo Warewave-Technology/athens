@@ -311,3 +311,34 @@ func TestEditorSecurityBoundaries(t *testing.T) {
 		t.Fatalf("plain read by a writer: %d %s", r.status, r.body)
 	}
 }
+
+// TestManyRowsNeedConfirmation (ADR-027): heuristics cannot see that
+// "WHERE id = id" matches every row; the row count can.
+func TestManyRowsNeedConfirmation(t *testing.T) {
+	h, _ := dbHarness(t, instances[0], nil)
+	w := h.login("w@example.com", "writers")
+	if r := run(w, "create table public.zbig as select g as id from generate_series(1, 2000) g", nil); r.status != 200 {
+		t.Fatalf("create: %d %s", r.status, r.body)
+	}
+	r := run(w, "delete from public.zbig where id = id", nil)
+	if r.status != 409 || r.errCode() != "confirmation_required" || !strings.Contains(string(r.body), "2000") {
+		t.Fatalf("unconfirmed mass delete: %d %s", r.status, r.body)
+	}
+	if r := run(w, "select count(*)::text from public.zbig", nil); !strings.Contains(string(r.body), "2000") {
+		t.Fatalf("rows were deleted without confirmation: %s", r.body)
+	}
+	for _, sql := range []string{
+		"with d as (delete from public.zbig where id = id returning 1) select count(*) from d",
+		"explain analyze update public.zbig set id = id where id > 0",
+	} {
+		if r := run(w, sql, nil); r.status != 409 || r.errCode() != "confirmation_required" {
+			t.Fatalf("%s: %d %s", sql, r.status, r.body)
+		}
+	}
+	if r := run(w, "delete from public.zbig where id <= 10", nil); r.status != 200 {
+		t.Fatalf("small delete: %d %s", r.status, r.body)
+	}
+	if r := run(w, "delete from public.zbig where id = id", map[string]any{"confirm": true}); r.status != 200 {
+		t.Fatalf("confirmed: %d %s", r.status, r.body)
+	}
+}

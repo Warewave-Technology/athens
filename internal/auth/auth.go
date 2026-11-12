@@ -217,28 +217,24 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// #nosec G124 -- Secure is false only with server.insecureDev
 	clearAuth := &http.Cookie{Name: a.authCookie(), Path: "/auth/", MaxAge: -1, HttpOnly: true, Secure: a.secure, SameSite: http.SameSiteLaxMode}
 
+	// Callbacks without a valid, matching sign-in state are anonymous (anyone
+	// can start a sign-in and replay the callback): they are counted and
+	// logged, never audited, so they cannot flood the audit log (ADR-027).
 	st, err := a.readState(r)
 	if err != nil {
-		if _, cerr := r.Cookie(a.authCookie()); cerr != nil {
-			// No sign-in in progress (a bookmarked or forged callback): not
-			// worth an audit record, which anonymous requests could flood.
-			metrics.AuthLogins.WithLabelValues("denied").Inc()
-			a.log.Debug("callback without sign-in state")
-		} else {
-			a.deny(ctx, "invalid_state", "")
-		}
+		a.rejectState("missing_or_invalid")
 		http.SetCookie(w, clearAuth)
 		a.errorPage(w, http.StatusBadRequest, "Your sign-in attempt expired or is invalid. Please sign in again.")
 		return
 	}
 	http.SetCookie(w, clearAuth)
 	if !constantEqual(q.Get("state"), st.State) {
-		a.deny(ctx, "invalid_state", "")
+		a.rejectState("mismatch")
 		a.errorPage(w, http.StatusBadRequest, "Your sign-in attempt is invalid (state mismatch). Please sign in again.")
 		return
 	}
 	if e := q.Get("error"); e != "" {
-		a.deny(ctx, "idp_error", e)
+		a.rejectAnonymous("idp_error")
 		a.errorPage(w, http.StatusUnauthorized, "Sign-in was not completed: "+e+" "+q.Get("error_description"))
 		return
 	}
@@ -250,7 +246,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	tok, err := oc.Exchange(a.oidcCtx(ctx), q.Get("code"), oauth2.VerifierOption(st.Verifier))
 	if err != nil {
 		a.log.Warn("token exchange failed", "err", err)
-		a.deny(ctx, "exchange_failed", "")
+		a.rejectAnonymous("exchange_failed")
 		a.errorPage(w, http.StatusUnauthorized, "Sign-in failed while exchanging the authorization code. Please try again.")
 		return
 	}
@@ -258,12 +254,12 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	idt, err := verifier.Verify(a.oidcCtx(ctx), raw)
 	if err != nil {
 		a.log.Warn("id token verification failed", "err", err)
-		a.deny(ctx, "invalid_id_token", "")
+		a.rejectAnonymous("invalid_id_token")
 		a.errorPage(w, http.StatusUnauthorized, "Sign-in failed: the identity token is invalid.")
 		return
 	}
 	if !constantEqual(idt.Nonce, st.Nonce) {
-		a.deny(ctx, "invalid_nonce", "")
+		a.rejectAnonymous("invalid_nonce")
 		a.errorPage(w, http.StatusUnauthorized, "Sign-in failed: the identity token does not belong to this sign-in attempt.")
 		return
 	}
@@ -373,6 +369,20 @@ func reasonOf(err error) string {
 	default:
 		return "invalid_claims"
 	}
+}
+
+func (a *Authenticator) rejectState(why string) {
+	metrics.AuthLogins.WithLabelValues("denied").Inc()
+	a.log.Info("sign-in callback rejected", "reason", "invalid_state", "state", why)
+}
+
+// rejectAnonymous records a failure before the ID token is verified: the
+// caller is unknown and anyone can trigger it (GET /auth/login then replay
+// the callback), so it is counted and logged with a fixed reason, never
+// audited (ADR-027). Denials of a verified user are audited by deny.
+func (a *Authenticator) rejectAnonymous(reason string) {
+	metrics.AuthLogins.WithLabelValues("denied").Inc()
+	a.log.Info("sign-in callback rejected", "reason", reason)
 }
 
 func (a *Authenticator) deny(ctx context.Context, reason, idpError string) {

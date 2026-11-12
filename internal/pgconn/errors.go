@@ -29,6 +29,15 @@ var ErrReadLoginRequired = errors.New("read-only login required")
 // ErrNoDatabase: an explicitly requested database does not exist (3D000).
 var ErrNoDatabase = errors.New("database does not exist")
 
+// ErrDatabaseDenied: the login may not connect to that database (42501).
+var ErrDatabaseDenied = errors.New("no permission to connect to this database")
+
+// isNoConnectPrivilege reports SQLSTATE 42501 at connect time (no CONNECT).
+func isNoConnectPrivilege(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "42501"
+}
+
 // isMissingDatabase reports SQLSTATE 3D000 (invalid_catalog_name).
 func isMissingDatabase(err error) bool {
 	var pe *pgconn.PgError

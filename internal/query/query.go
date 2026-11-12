@@ -7,6 +7,7 @@ package query
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -75,6 +76,17 @@ type SyntaxDetails struct {
 	Line     int `json:"line"`
 	Column   int `json:"column"`
 }
+
+// ConfirmRowsAbove: an unconfirmed data change of more rows than this is
+// rolled back and needs confirmation.
+const ConfirmRowsAbove = 1000
+
+// xactChanges sums the backend's pending row changes (pg_stat_xact_*).
+const xactChanges = `SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int8 FROM pg_stat_xact_all_tables`
+
+type manyRowsError struct{ n int64 }
+
+func (e *manyRowsError) Error() string { return fmt.Sprintf("statement changes %d rows", e.n) }
 
 // Execute runs in.SQL. Errors are *httpx.Error (API model) or pgconn errors
 // for the handler's DB error mapping.
@@ -158,6 +170,17 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true, UserSQL: true,
 		ReadOnly: readOnlyProbe, Notices: &out.Notices,
 	}, func(ctx context.Context, tx pgx.Tx) error {
+		// Rows changed by this statement, including writable CTEs, EXPLAIN
+		// ANALYZE, cascades and triggers: the difference of the backend's
+		// pending table counters around it (they may still hold earlier
+		// transactions' counts, PostgreSQL 15+).
+		countChanges := cls.Class == sqlclass.DML && !in.Confirm
+		var before int64
+		if countChanges {
+			if err := tx.QueryRow(ctx, xactChanges).Scan(&before); err != nil {
+				return err
+			}
+		}
 		res, err := pgconn.QueryText(ctx, tx, cls.Statement, nil, pgconn.TextOptions{
 			MaxRows: limit, MaxCellBytes: s.Limits.MaxCellBytes, Cursor: cls.Cursorable,
 		})
@@ -165,12 +188,37 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 			return err
 		}
 		out.Columns, out.Rows, out.Truncated, out.TruncatedCells, out.CommandTag = res.Columns, res.Rows, res.Truncated, res.TruncatedCells, res.CommandTag
+		// Heuristics miss tautologies (WHERE id = id): an unconfirmed change
+		// of many rows is rolled back and becomes a confirmation (ADR-027).
+		if countChanges {
+			var after int64
+			if err := tx.QueryRow(ctx, xactChanges).Scan(&after); err != nil {
+				return err
+			}
+			n := after - before
+			if res.RowsAffected > n {
+				n = res.RowsAffected
+			}
+			if n > ConfirmRowsAbove {
+				return &manyRowsError{n: n}
+			}
+		}
 		if cls.Class != sqlclass.Read {
 			n := res.RowsAffected
 			out.RowsAffected = &n
 		}
 		return nil
 	})
+	var many *manyRowsError
+	if errors.As(err, &many) {
+		rec.Event, rec.Result = audit.EventConfirmRequired, audit.ResultDenied
+		s.Audit.Write(ctx, rec)
+		return nil, apiErr(http.StatusConflict, "confirmation_required",
+			fmt.Sprintf("this statement changes %d rows", many.n)).WithDetails(map[string]any{
+			"class": cls.Class, "destructive": true, "summary": fmt.Sprintf("%s (%d rows)", cls.Summary, many.n),
+			"rows": many.n, "environment": in.Target.Environment, "requireTypedConfirmation": in.Target.Environment == "production",
+		})
+	}
 	var pe *pgxconn.PgError
 	if readOnlyProbe && errors.As(err, &pe) && pe.Code == "25006" { // read_only_sql_transaction
 		rec.Event, rec.Result, rec.StatementClass = audit.EventConfirmRequired, audit.ResultDenied, string(sqlclass.DML)

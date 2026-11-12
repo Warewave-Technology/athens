@@ -218,6 +218,10 @@ func classify(n *pg.Node, r *Result) {
 			case pg.AlterTableType_AT_DropConstraint:
 				r.Destructive = true
 				r.Summary = "ALTER TABLE " + rangeVar(s.AlterTableStmt.Relation) + " DROP CONSTRAINT " + cmd.Name
+			case pg.AlterTableType_AT_AlterColumnType:
+				// rewrites every value (USING, truncating casts)
+				r.Destructive = true
+				r.Summary = "ALTER TABLE " + rangeVar(s.AlterTableStmt.Relation) + " ALTER COLUMN " + cmd.Name + " TYPE"
 			}
 		}
 	case *pg.Node_DoStmt:
@@ -435,6 +439,9 @@ var sideEffectExact = map[string]bool{
 	// replication slots, backups
 	"pg_replication_slot_advance": true, "pg_backup_start": true, "pg_backup_stop": true, "pg_start_backup": true,
 	"pg_stop_backup": true,
+	// index maintenance changes indexes physically, also in READ ONLY
+	"brin_summarize_new_values": true, "brin_summarize_range": true, "brin_desummarize_range": true,
+	"gin_clean_pending_list": true,
 	// large objects: writes are not blocked by READ ONLY before PostgreSQL 14
 	"lowrite": true, "lo_truncate": true, "lo_truncate64": true, "lo_open": true, "lo_close": true, "lo_lseek": true,
 	"lo_lseek64": true, "loread": true,

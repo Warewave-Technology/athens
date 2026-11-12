@@ -319,6 +319,51 @@ finding confirmed against Postgres 16 and 13) found, and this release fixes:
   (debian12 carried outdated ca-certificates and tzdata); dev-only
   minimatch override.
 
+A verification round on these fixes found and this release also fixes:
+- *Privileged* means membership too: a login that is a member of a
+  superuser/REPLICATION/BYPASSRLS role or of `pg_monitor`,
+  `pg_read_all_settings`, `pg_read_all_stats`, `pg_signal_backend` or the
+  server-file roles counts as privileged (a member of `postgres` could
+  `SET ROLE postgres` through a dynamic-SQL function; `pg_monitor` reads
+  `primary_conninfo`). The check runs for the RO login as well, per
+  credential kind, and again whenever a pool is created.
+- On a privileged login without a usable read role, read users are also
+  refused grid rows (athens' own SELECTs would run with the login's
+  privileges, e.g. `pg_settings`); structure and listings stay.
+- `brin_summarize_*`, `brin_desummarize_range`, `gin_clean_pending_list`
+  are side-effect functions (they change indexes inside READ ONLY).
+- An unconfirmed DML statement that changes more than 1000 rows is rolled
+  back and needs confirmation, which catches tautologies (`WHERE id = id`)
+  the syntactic heuristic cannot.
+- Explicit database names are checked against the cached database list
+  before a pool is created; a database's own refusal (3D000, 42501) is 404
+  or 403 and never marks the target unreachable; an evicted pool is retried.
+- Sign-in callbacks with an invalid or mismatched state are never audited
+  (counted and logged instead); per-user byte budget of 16 MiB for saved
+  queries, drafts and UI state, history trimmed to 16 MiB of SQL; the
+  export counts first, so `X-Athens-Export-Capped` is a real header, and a
+  failed export is audited as `error`.
+
+A third round fixed:
+- Privilege is re-checked in every read transaction (a role granted later,
+  e.g. `GRANT postgres TO app`, is seen immediately); only the role-switch
+  usability is cached.
+- The 1000-row rule counts the statement's real changes (difference of
+  `pg_stat_xact_all_tables` around it), so writable CTEs, EXPLAIN ANALYZE,
+  cascades and triggers are counted too; a column type change
+  (`ALTER COLUMN ... TYPE`, with or without `USING`) is destructive.
+- Sign-in failures before the ID token verifies (`idp_error`,
+  `exchange_failed`, `invalid_id_token`, `invalid_nonce`) are counted and
+  logged, not audited; denials of a verified user still are.
+- The per-user budget counts bytes (`length(CAST(x AS BLOB))`), checks
+  updates by their size difference (saved queries included), and a failed
+  export aborts the download instead of ending it as if complete.
+
+Residual, accepted: a user-defined function in the target database that
+runs dynamic SQL can still switch an unprivileged login's role or send
+NOTIFY without a confirmation; on unprivileged logins that grants nothing
+beyond the login's own rights.
+
 Accepted (documented in `.trivyignore`): cluster-wide `get` on Secrets when
 the whole cluster is watched (owner's decision, ADR-024; list namespaces to
 scope it), the same per namespace in namespaced mode, the ghcr.io registry

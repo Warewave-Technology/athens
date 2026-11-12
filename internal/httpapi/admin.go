@@ -166,6 +166,10 @@ func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) error 
 	// Stream page by page: memory stays bounded however large the log is.
 	// The first page is read before any output, so a store error is still a
 	// clean error response.
+	total, err := s.Store.CountAudit(r.Context(), f)
+	if err != nil {
+		return err
+	}
 	f.Limit = exportPage
 	page, err := s.Store.ListAudit(r.Context(), f)
 	if err != nil {
@@ -174,7 +178,10 @@ func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) error 
 	name := "athens-audit-" + time.Now().UTC().Format("20060102-150405") + "." + format
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Trailer", "X-Athens-Export-Capped")
+	capped := total > maxAuditExport
+	if capped {
+		w.Header().Set("X-Athens-Export-Capped", "true")
+	}
 	var emit func(store.AuditRecord) error
 	var flush func()
 	if format == "jsonl" {
@@ -197,12 +204,11 @@ func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) error 
 		flush = cw.Flush
 	}
 
-	n, capped := 0, false
+	n, result := 0, audit.ResultOK
 stream:
 	for {
 		for _, rec := range page {
 			if n == maxAuditExport {
-				capped = true
 				break stream
 			}
 			if err := emit(rec); err != nil {
@@ -216,13 +222,19 @@ stream:
 		flush()
 		f.Before = page[len(page)-1].ID
 		if page, err = s.Store.ListAudit(r.Context(), f); err != nil {
+			// headers are out: record the failure and abort the response so
+			// the download visibly fails instead of looking complete
 			s.Log.Error("audit export: store error mid-stream", "err", err)
+			result = audit.ResultError
 			break
 		}
 	}
 	flush()
-	if capped {
-		w.Header().Set("X-Athens-Export-Capped", "true")
+	if result == audit.ResultError {
+		b, _ := json.Marshal(map[string]any{"format": format, "records": n, "failed": true})
+		rows := int64(n)
+		s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventAuditExport, Result: result, RowsAffected: &rows, Details: string(b)})
+		panic(http.ErrAbortHandler)
 	}
 
 	details := map[string]any{"format": format, "records": n, "capped": capped}
@@ -231,7 +243,7 @@ stream:
 	}
 	b, _ := json.Marshal(details)
 	rows := int64(n)
-	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventAuditExport, Result: audit.ResultOK, RowsAffected: &rows, Details: string(b)})
+	s.Audit.Write(r.Context(), store.AuditRecord{Event: audit.EventAuditExport, Result: result, RowsAffected: &rows, Details: string(b)})
 	return nil
 }
 

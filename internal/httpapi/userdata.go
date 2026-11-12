@@ -50,12 +50,15 @@ func (s *Server) putUIState(w http.ResponseWriter, r *http.Request) error {
 		return httpx.NewError(http.StatusRequestEntityTooLarge, "too_large", "value must be at most 16 KiB of JSON")
 	}
 	uid := reqctx.UserFrom(r.Context()).ID
-	if _, _, n, err := s.Store.UserItemCounts(r.Context(), uid); err != nil {
-		return err
-	} else if n >= maxUIStateKeys {
-		if _, err := s.Store.GetUIState(r.Context(), uid, key); errors.Is(err, store.ErrNotFound) {
-			return errLimit("UI state entries", maxUIStateKeys)
+	oldValue, gerr := s.Store.GetUIState(r.Context(), uid, key)
+	isNew := errors.Is(gerr, store.ErrNotFound)
+	if err := s.checkUserCaps(r, len(body.Value)-len(oldValue), func(u store.UserItems) (int, int, string) {
+		if !isNew {
+			return 0, 0, ""
 		}
+		return u.UIState, maxUIStateKeys, "UI state entries"
+	}); err != nil {
+		return err
 	}
 	if err := s.Store.PutUIState(r.Context(), reqctx.UserFrom(r.Context()).ID, key, string(body.Value)); err != nil {
 		return err

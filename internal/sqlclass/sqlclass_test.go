@@ -131,6 +131,9 @@ func TestDynamicSQLAndServerFunctions(t *testing.T) {
 		"select pg_log_backend_memory_contexts(1)",
 		"explain select * from t where id = substr(table_to_xml('pg_authid',true,true,'')::text, 1, 5)::int",
 		"select * from (values (query_to_xml('select 1',true,true,''))) v",
+		"select brin_summarize_new_values('t_brin')",
+		"select brin_desummarize_range('t_brin', 0)",
+		"select gin_clean_pending_list('t_gin')",
 	} {
 		r, err := Classify(sql)
 		if err != nil {
@@ -147,6 +150,8 @@ func TestMergeAndOrTrueAreDestructive(t *testing.T) {
 		"merge into t using (select 1) s on true when matched then delete",
 		"delete from t where true or id = 1",
 		"update t set a = 1 where id = 2 or 1 = 1",
+		"alter table t alter column v type text using null",
+		"alter table t alter column v type varchar(3)",
 	} {
 		r, err := Classify(sql)
 		if err != nil || !r.Destructive {

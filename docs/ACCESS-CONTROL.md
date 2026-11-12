@@ -193,7 +193,9 @@ Write access is not unlimited. For every SQL editor statement:
 - **Writers' SELECTs run READ ONLY too.** If one writes through a function,
   athens asks for confirmation and runs it again in a writable transaction.
 - **MERGE** and `DELETE`/`UPDATE` with `WHERE ... OR true` count as
-  destructive.
+  destructive, and any unconfirmed change of more than 1000 rows is rolled
+  back and shown for confirmation with its row count (this catches
+  `WHERE id = id` and similar).
 
 Grid edits are guarded too:
 - Rows are matched by primary key, and the original value of every edited

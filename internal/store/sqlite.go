@@ -161,6 +161,9 @@ func (s *SQLite) PurgeSessions(ctx context.Context, now time.Time, idleTTL time.
 	return res.RowsAffected()
 }
 
+// historyBytes caps the SQL text kept in one user's history (ADR-027).
+const historyBytes = 16 << 20
+
 func (s *SQLite) AddHistory(ctx context.Context, h HistoryItem, keep int) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -179,6 +182,12 @@ func (s *SQLite) AddHistory(ctx context.Context, h HistoryItem, keep int) (int64
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM query_history WHERE user_id = ? AND id NOT IN
 		(SELECT id FROM query_history WHERE user_id = ? ORDER BY id DESC LIMIT ?)`, h.UserID, h.UserID, keep); err != nil {
+		return 0, err
+	}
+	// and at most historyBytes of SQL per user, oldest first
+	if _, err := tx.ExecContext(ctx, `DELETE FROM query_history WHERE id IN (
+		SELECT id FROM (SELECT id, sum(length(CAST(sql AS BLOB))) OVER (ORDER BY id DESC) AS total FROM query_history WHERE user_id = ?)
+		WHERE total > ?)`, h.UserID, historyBytes); err != nil {
 		return 0, err
 	}
 	return id, tx.Commit()
@@ -304,12 +313,17 @@ func (s *SQLite) GetDraft(ctx context.Context, userID, targetID, database string
 	return &d, nil
 }
 
-func (s *SQLite) UserItemCounts(ctx context.Context, userID string) (saved, drafts, uiState int, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT
+func (s *SQLite) UserItems(ctx context.Context, userID string) (UserItems, error) {
+	var u UserItems
+	err := s.db.QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM saved_queries WHERE user_id = ?),
 		(SELECT count(*) FROM drafts WHERE user_id = ?),
-		(SELECT count(*) FROM ui_state WHERE user_id = ?)`, userID, userID, userID).Scan(&saved, &drafts, &uiState)
-	return saved, drafts, uiState, err
+		(SELECT count(*) FROM ui_state WHERE user_id = ?),
+		(SELECT coalesce(sum(length(CAST(sql AS BLOB))), 0) FROM saved_queries WHERE user_id = ?) +
+		(SELECT coalesce(sum(length(CAST(sql AS BLOB))), 0) FROM drafts WHERE user_id = ?) +
+		(SELECT coalesce(sum(length(CAST(value_json AS BLOB))), 0) FROM ui_state WHERE user_id = ?)`,
+		userID, userID, userID, userID, userID, userID).Scan(&u.Saved, &u.Drafts, &u.UIState, &u.Bytes)
+	return u, err
 }
 
 func (s *SQLite) PutDraft(ctx context.Context, userID, targetID, database, sqlText string) (*Draft, error) {
@@ -349,9 +363,9 @@ func (s *SQLite) InsertAudit(ctx context.Context, r AuditRecord) error {
 	return err
 }
 
-func (s *SQLite) ListAudit(ctx context.Context, f AuditFilter) ([]AuditRecord, error) {
-	q := `SELECT id, ts, event, user_id, email, client_ip, user_agent, target_id, database, object, statement_class, destructive,
-		sql, rows_affected, duration_ms, result, error_code, details_json FROM audit_log WHERE 1=1`
+// auditWhere builds the WHERE clause shared by ListAudit and CountAudit.
+func auditWhere(f AuditFilter) (string, []any) {
+	q := ` WHERE 1=1`
 	var args []any
 	if f.User != "" {
 		q += ` AND (user_id = ? OR email = ? COLLATE NOCASE)`
@@ -377,6 +391,21 @@ func (s *SQLite) ListAudit(ctx context.Context, f AuditFilter) ([]AuditRecord, e
 		q += ` AND id < ?`
 		args = append(args, f.Before)
 	}
+	return q, args
+}
+
+func (s *SQLite) CountAudit(ctx context.Context, f AuditFilter) (int, error) {
+	where, args := auditWhere(f)
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM audit_log`+where, args...).Scan(&n)
+	return n, err
+}
+
+func (s *SQLite) ListAudit(ctx context.Context, f AuditFilter) ([]AuditRecord, error) {
+	where, args := auditWhere(f)
+	// #nosec G202 -- where is built from constant fragments; every value is a bound parameter
+	q := `SELECT id, ts, event, user_id, email, client_ip, user_agent, target_id, database, object, statement_class, destructive,
+		sql, rows_affected, duration_ms, result, error_code, details_json FROM audit_log` + where
 	q += ` ORDER BY id DESC LIMIT ?`
 	args = append(args, clampLimit(f.Limit, 100, 1000))
 	rows, err := s.db.QueryContext(ctx, q, args...)

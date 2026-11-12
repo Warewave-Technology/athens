@@ -74,6 +74,12 @@ type Draft struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// UserItems is a user's stored-item footprint.
+type UserItems struct {
+	Saved, Drafts, UIState int
+	Bytes                  int64 // saved query, draft and UI state text
+}
+
 type AuditRecord struct {
 	ID             int64     `json:"id"`
 	TS             time.Time `json:"ts"`
@@ -130,14 +136,15 @@ type Store interface {
 	GetDraft(ctx context.Context, userID, targetID, database string) (*Draft, error)
 	PutDraft(ctx context.Context, userID, targetID, database, sql string) (*Draft, error)
 
-	// UserItemCounts counts a user's saved queries, drafts and UI state keys
-	// (per-user caps).
-	UserItemCounts(ctx context.Context, userID string) (saved, drafts, uiState int, err error)
+	// UserItems counts a user's saved queries, drafts and UI state keys and
+	// their total size (per-user caps).
+	UserItems(ctx context.Context, userID string) (UserItems, error)
 
 	GetUIState(ctx context.Context, userID, key string) (string, error)
 	PutUIState(ctx context.Context, userID, key, valueJSON string) error
 
 	InsertAudit(ctx context.Context, r AuditRecord) error
 	ListAudit(ctx context.Context, f AuditFilter) ([]AuditRecord, error)
+	CountAudit(ctx context.Context, f AuditFilter) (int, error)
 	PurgeAudit(ctx context.Context, before time.Time) (int64, error)
 }

@@ -94,14 +94,13 @@ type targetState struct {
 	// missingDB / fallbackDB: the guessed initial database does not exist and
 	// the default-database pool uses fallbackDB instead.
 	missingDB, fallbackDB string
-	// readRole: the role read users on the RW login switch to; checked once
-	// per target (ADR-026). "" after the check means no usable role.
-	readRole        string
-	readRoleChecked bool
-	// rwPrivileged: the RW login is a superuser or has REPLICATION or
-	// BYPASSRLS; a role switch on it is not a boundary (ADR-027).
-	rwPrivileged bool
-	running      map[*runHandle]struct{}
+	// roleChecks: per credential kind, the read-only role read users switch
+	// to and whether the login is privileged (ADR-026, ADR-027).
+	roleChecks map[CredKind]roleCheck
+	// dbs: databases of the target (cached at dbsAt, ADR-027).
+	dbs     map[string]bool
+	dbsAt   time.Time
+	running map[*runHandle]struct{}
 }
 
 type runHandle struct{ cancel context.CancelFunc }
@@ -147,8 +146,11 @@ type Request struct {
 	// Reset runs DISCARD ALL after the transaction (SQL editor, ADR-011).
 	Reset bool
 	// UserSQL marks SQL written by the user (SQL editor). Read users may not
-	// run it on a privileged RW login (ADR-027).
+	// run it on a privileged login (ADR-027).
 	UserSQL bool
+	// UserData marks reads of table rows (grid). Read users may not run them
+	// on a privileged login without a usable read-only role (ADR-027).
+	UserData bool
 	// Notices receives NOTICE/WARNING messages raised during fn.
 	Notices *[]Notice
 }
@@ -183,6 +185,18 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 	if useRO {
 		kind = RO
 	}
+	if req.Database != "" {
+		ok, err := m.databaseExists(ctx, req.Target, req.Database)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ErrCancelled
+			}
+			return err
+		}
+		if !ok {
+			return ErrNoDatabase
+		}
+	}
 	key := Key{TargetID: req.Target.ID, Database: req.Database, Kind: kind}
 	conn, err := m.acquire(ctx, req.Target, key)
 	if err != nil && kind == RO && isAuthError(err) {
@@ -199,9 +213,10 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		}
 		return err
 	}
-	// Read users on the RW login drop to a read-only role (ADR-026).
-	dropRole := req.Level == authz.Read && key.Kind == RW
-	err = m.runOn(ctx, conn, req, dropRole, fn)
+	// Read users drop to a read-only role and are checked for a privileged
+	// login, on either credential (ADR-026, ADR-027).
+	dropRole := req.Level == authz.Read
+	err = m.runOn(ctx, conn, req, dropRole, key.Kind, fn)
 	if errors.Is(err, errStaleConn) {
 		// The pooled connections died underneath us (server or network
 		// restart). Nothing reached the server, so drop the pool's idle
@@ -211,7 +226,7 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		if conn, err = m.acquire(ctx, req.Target, key); err != nil {
 			return err
 		}
-		err = m.runOn(ctx, conn, req, dropRole, fn)
+		err = m.runOn(ctx, conn, req, dropRole, key.Kind, fn)
 	}
 	if errors.Is(err, errStaleConn) {
 		return &ErrUnavailable{Cause: err}
@@ -244,7 +259,7 @@ func (m *Manager) resetPool(key Key) {
 
 func (m *Manager) log() *slog.Logger { return m.opt.Log }
 
-func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dropRole bool, fn func(context.Context, pgx.Tx) error) (err error) {
+func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dropRole bool, kind CredKind, fn func(context.Context, pgx.Tx) error) (err error) {
 	defer func() {
 		if req.Reset {
 			// User SQL may have changed session state; never hand it to the
@@ -289,10 +304,14 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 		return classify(ctx, err)
 	}
 	if dropRole {
-		if err = m.setReadRole(ctx, tx, req.Target); err != nil {
+		rc, err := m.setReadRole(ctx, tx, req.Target, kind)
+		if err != nil {
 			return classify(ctx, err)
 		}
-		if req.UserSQL && m.privilegedRW(req.Target.ID) {
+		// On a privileged login a role switch is no boundary for user SQL,
+		// and without one even athens-generated reads would run with the
+		// login's privileges (settings, other sessions): refuse both.
+		if rc.privileged && (req.UserSQL || (req.UserData && rc.role == "")) {
 			return ErrReadLoginRequired
 		}
 	}
@@ -309,41 +328,62 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 // table, view and sequence but not run superuser-only functions.
 const defaultReadRole = "pg_read_all_data"
 
-// setReadRole switches the transaction to the target's read-only role with
-// SET LOCAL ROLE (reset at commit; RESET/SET ROLE are rejected by sqlclass).
-// The first call per target checks, inside a savepoint, that the role exists
-// and the login may switch to it; without a usable role the transaction
-// stays on the RW login in READ ONLY mode and admins get a warning.
-func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target) error {
+// roleCheck is the cached result of checking one login of a target.
+type roleCheck struct {
+	role       string // usable read-only role, "" if none
+	privileged bool   // the login has privileges a role switch cannot contain
+}
+
+// privilegedLogin: the login is, or is a member of, a role that is superuser,
+// REPLICATION or BYPASSRLS, or of a predefined role that reads server files,
+// settings or other sessions, or signals backends. Through any function that
+// runs SQL a user can SET ROLE back to such a login (ADR-027).
+const privilegedLogin = `SELECT EXISTS (SELECT 1 FROM pg_roles r
+	WHERE (r.rolsuper OR r.rolreplication OR r.rolbypassrls OR r.rolname IN ('pg_read_server_files', 'pg_write_server_files',
+		'pg_execute_server_program', 'pg_signal_backend', 'pg_read_all_settings', 'pg_read_all_stats', 'pg_monitor'))
+	AND pg_has_role(session_user, r.oid, 'MEMBER'))`
+
+// setReadRole switches a read user's transaction to the target's read-only
+// role with SET LOCAL ROLE (reset at commit; RESET/SET ROLE are rejected by
+// sqlclass) and reports what it knows about the login. Whether the login is
+// privileged is checked in every transaction (a role can be granted at any
+// time); whether it may switch to the role is checked inside a savepoint once
+// per target and credential kind and cached until a pool of that kind is
+// created again.
+func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target, kind CredKind) (roleCheck, error) {
 	role := t.ReadOnlyRole
 	if role == "" {
 		role = defaultReadRole
 	}
 	set := "SET LOCAL ROLE " + pgx.Identifier{role}.Sanitize()
+	var privileged bool
+	if err := tx.QueryRow(ctx, privilegedLogin).Scan(&privileged); err != nil {
+		return roleCheck{}, err
+	}
 	m.mu.Lock()
 	st := m.state(t.ID)
-	checked, usable := st.readRoleChecked, st.readRole
+	rc, checked := st.roleChecks[kind]
+	if checked && rc.privileged != privileged {
+		rc.privileged = privileged
+		st.roleChecks[kind] = rc
+	}
 	m.mu.Unlock()
 	if checked {
-		if usable == "" {
-			return nil
+		if rc.role == "" {
+			return rc, nil
 		}
 		if _, err := tx.Exec(ctx, set); err != nil {
 			m.mu.Lock()
-			m.state(t.ID).readRoleChecked = false // role dropped or revoked: check again next time
+			delete(m.state(t.ID).roleChecks, kind) // role dropped or revoked: check again next time
 			m.mu.Unlock()
-			return err
+			return rc, err
 		}
-		return nil
+		return rc, nil
 	}
 
-	var privileged bool
-	if err := tx.QueryRow(ctx, `SELECT rolsuper OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = session_user`).Scan(&privileged); err != nil {
-		return err
-	}
 	ok := false
 	if _, err := tx.Exec(ctx, "SAVEPOINT athens_role"); err != nil {
-		return err
+		return rc, err
 	}
 	var n int
 	err := tx.QueryRow(ctx, `SELECT count(*) FROM pg_roles r WHERE r.rolname = $1 AND pg_has_role(current_user, r.oid, 'MEMBER')`, role).Scan(&n)
@@ -354,37 +394,40 @@ func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target
 	}
 	if !ok {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return rc, ctx.Err()
 		}
 		if _, rerr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT athens_role"); rerr != nil {
-			return rerr
+			return rc, rerr
 		}
-		m.log().Warn("no usable read-only role; read users run on the rw login in READ ONLY transactions",
-			"target", t.ID, "role", role)
+		if kind == RW {
+			m.log().Warn("no usable read-only role; read users run on the rw login in READ ONLY transactions",
+				"target", t.ID, "role", role, "privileged", privileged)
+		}
 	} else if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT athens_role"); err != nil {
-		return err
+		return rc, err
+	}
+	rc = roleCheck{privileged: privileged}
+	if ok {
+		rc.role = role
 	}
 	m.mu.Lock()
 	st = m.state(t.ID)
-	st.readRoleChecked, st.rwPrivileged = true, privileged
-	st.readRole = ""
-	if ok {
-		st.readRole = role
+	if st.roleChecks == nil {
+		st.roleChecks = map[CredKind]roleCheck{}
 	}
+	st.roleChecks[kind] = rc
 	m.mu.Unlock()
-	return nil
-}
-
-func (m *Manager) privilegedRW(id string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, ok := m.states[id]
-	return ok && s.rwPrivileged
+	return rc, nil
 }
 
 // PrivilegedRW reports, after the first read on the RW login, that the login
 // is privileged, so read users cannot use the SQL editor there (ADR-027).
-func (m *Manager) PrivilegedRW(id string) bool { return m.privilegedRW(id) }
+func (m *Manager) PrivilegedRW(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.states[id]
+	return ok && s.roleChecks[RW].privileged
+}
 
 // ReadRole reports the read-only role of a target after the first read on its
 // RW login: checked is false before that; role is "" when none is usable.
@@ -392,7 +435,8 @@ func (m *Manager) ReadRole(id string) (role string, checked bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.states[id]; ok {
-		return s.readRole, s.readRoleChecked
+		rc, checked := s.roleChecks[RW]
+		return rc.role, checked
 	}
 	return "", false
 }
@@ -411,11 +455,19 @@ func AppName(email string) string {
 // acquire gets a connection, creating the pool lazily. On authentication
 // failure the credentials are re-resolved and the pool recreated once.
 func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pgxpool.Conn, error) {
-	p, err := m.pool(ctx, t, key, false)
-	if err != nil {
-		return nil, err
+	var p *pool
+	var conn *pgxpool.Conn
+	var err error
+	for range 2 {
+		if p, err = m.pool(ctx, t, key, false); err != nil {
+			return nil, err
+		}
+		conn, err = p.p.Acquire(ctx)
+		if err == nil || !m.evicted(key, p) {
+			break
+		}
+		// evicted between lookup and Acquire (makeRoom): take a fresh pool
 	}
-	conn, err := p.p.Acquire(ctx)
 	if err != nil && isAuthError(err) {
 		m.log().Info("authentication failed, re-resolving credentials", "target", t.ID, "kind", key.Kind)
 		if p, err = m.pool(ctx, t, key, true); err != nil {
@@ -426,11 +478,18 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	if err != nil && key.Database == "" && isMissingDatabase(err) {
 		conn, p, err = m.acquireFallbackDB(ctx, t, key, p.db, err)
 	}
-	if err != nil && key.Database != "" && isMissingDatabase(err) {
-		// A database name from the URL that does not exist: drop the pool
-		// at once and leave the target's status alone.
-		m.dropPool(key)
-		return nil, ErrNoDatabase
+	if err != nil && key.Database != "" {
+		// The server refused this one database (it was dropped, or the login
+		// lacks CONNECT on it): that is the database's error, not the
+		// target's. Drop the pool and leave the target status alone.
+		switch {
+		case isMissingDatabase(err):
+			m.dropPool(key)
+			return nil, ErrNoDatabase
+		case isNoConnectPrivilege(err):
+			m.dropPool(key)
+			return nil, ErrDatabaseDenied
+		}
 	}
 	if err != nil {
 		m.recordError(t.ID, err)
@@ -439,6 +498,55 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	p.touch()
 	m.recordOK(t.ID)
 	return conn, nil
+}
+
+// evicted reports that p is no longer the pool for key.
+func (m *Manager) evicted(key Key, p *pool) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pools[key] != p
+}
+
+// dbListTTL bounds how stale the cached database list of a target may be;
+// an unknown name refreshes it at most every dbListRefresh.
+const (
+	dbListTTL     = time.Minute
+	dbListRefresh = 5 * time.Second
+)
+
+// databaseExists checks name against the target's databases (cached), so a
+// database name from a URL never creates a pool unless it exists (ADR-027).
+func (m *Manager) databaseExists(ctx context.Context, t discovery.Target, name string) (bool, error) {
+	m.mu.Lock()
+	st := m.state(t.ID)
+	known, at := st.dbs[name], st.dbsAt
+	m.mu.Unlock()
+	age := time.Since(at)
+	if (known && age < dbListTTL) || (!known && age < dbListRefresh) {
+		return known, nil
+	}
+	conn, err := m.acquire(ctx, t, Key{TargetID: t.ID, Kind: RW})
+	if err != nil {
+		return false, err
+	}
+	defer conn.Release()
+	rows, err := conn.Query(ctx, "SELECT datname FROM pg_database WHERE datallowconn")
+	if err != nil {
+		return false, err
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return false, err
+	}
+	dbs := make(map[string]bool, len(names))
+	for _, n := range names {
+		dbs[n] = true
+	}
+	m.mu.Lock()
+	st = m.state(t.ID)
+	st.dbs, st.dbsAt = dbs, time.Now()
+	m.mu.Unlock()
+	return dbs[name], nil
 }
 
 // fallbackDBs are tried, in order, when the initial database of a target does
@@ -517,7 +625,7 @@ func (m *Manager) makeRoom(id string) error {
 			continue
 		}
 		n++
-		if p.p.Stat().AcquiredConns() == 0 && (lru == nil || p.idleSince().Before(lru.idleSince())) {
+		if k.Database != "" && p.p.Stat().AcquiredConns() == 0 && (lru == nil || p.idleSince().Before(lru.idleSince())) {
 			lru = p
 		}
 	}
@@ -571,6 +679,9 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 		return existing, nil
 	}
 	m.pools[key] = created
+	if st, ok := m.states[t.ID]; ok {
+		delete(st.roleChecks, key.Kind) // credentials may have changed: check the login again
+	}
 	return created, nil
 }
 
@@ -708,7 +819,8 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 		} else {
 			s.roFailed = false
 			s.missingDB, s.fallbackDB = "", ""
-			s.readRole, s.readRoleChecked, s.rwPrivileged = "", false, false
+			s.roleChecks = nil
+			s.dbs, s.dbsAt = nil, time.Time{}
 		}
 	}
 	m.mu.Unlock()

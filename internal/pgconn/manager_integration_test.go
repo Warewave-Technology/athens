@@ -482,3 +482,121 @@ func TestReadRoleWithoutROLogin(t *testing.T) {
 		t.Fatalf("pg13 ReadRole = %q %v", role, checked)
 	}
 }
+
+// TestDatabaseScopedErrors (ADR-027): unknown database names never create a
+// pool, and a database the login may not connect to is that database's error.
+func TestDatabaseScopedErrors(t *testing.T) {
+	in := instances[0]
+	tg, client := in.Target("dbscoped")
+	m := in.Manager(tg, client, pgtest.Limits())
+	defer m.CloseAll()
+	ctx := context.Background()
+	noop := func(context.Context, pgx.Tx) error { return nil }
+
+	// the read-only login (not a superuser) may not connect to "locked"
+	admin, err := in.Connect(ctx, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = admin.Close(ctx) }()
+	for _, sql := range []string{"DROP DATABASE IF EXISTS locked", "CREATE DATABASE locked", "REVOKE CONNECT ON DATABASE locked FROM PUBLIC"} {
+		if _, err := admin.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i := range 40 {
+		if err := m.Run(ctx, pgtest.Req(tg, fmt.Sprintf("random_%d", i), authz.Read), noop); !errors.Is(err, athenspg.ErrNoDatabase) {
+			t.Fatalf("random database %d: %v", i, err)
+		}
+	}
+	for _, st := range m.Stats() {
+		if strings.HasPrefix(st.Database, "random_") {
+			t.Fatalf("pool created for an unknown database: %+v", st)
+		}
+	}
+
+	err = m.Run(ctx, pgtest.Req(tg, "locked", authz.Read), noop) // read users use the RO login
+	if !errors.Is(err, athenspg.ErrDatabaseDenied) {
+		t.Fatalf("no CONNECT privilege: %v", err)
+	}
+	if s := m.Status(tg.ID); s == "unreachable" {
+		t.Fatalf("one database's refusal marked the target %s", s)
+	}
+}
+
+// TestPrivilegedLogins (ADR-027): a login that is a member of a superuser or
+// monitoring role counts as privileged; read users get neither editor SQL
+// nor (without a usable read role) grid rows there. Unprivileged logins keep
+// working.
+func TestPrivilegedLogins(t *testing.T) {
+	in := instances[0]
+	ctx := context.Background()
+	admin, err := in.Connect(ctx, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = admin.Close(ctx) }()
+	for _, sql := range []string{
+		"CREATE ROLE zmember LOGIN PASSWORD 'zmember-pw' IN ROLE postgres",
+		"CREATE ROLE zmon LOGIN PASSWORD 'zmon-pw' IN ROLE pg_monitor",
+		"CREATE ROLE zplain LOGIN PASSWORD 'zplain-pw'",
+	} {
+		if _, err := admin.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	login := func(user string) (*athenspg.Manager, discovery.Target) {
+		tg, client := in.Target("priv-" + user)
+		tg.RO = nil
+		sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: user, Namespace: pgtest.Namespace},
+			Data: map[string][]byte{"username": []byte(user), "password": []byte(user + "-pw")}}
+		if _, err := client.CoreV1().Secrets(pgtest.Namespace).Create(ctx, sec, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		tg.RW = discovery.CredentialRef{
+			User:     discovery.ValueSource{Secret: &discovery.KeyRef{Name: user, Key: "username"}},
+			Password: discovery.ValueSource{Secret: &discovery.KeyRef{Name: user, Key: "password"}},
+		}
+		return in.Manager(tg, client, pgtest.Limits()), tg
+	}
+	run := func(m *athenspg.Manager, tg discovery.Target, sql, data bool) error {
+		req := pgtest.Req(tg, "app", authz.Read)
+		req.UserSQL, req.UserData = sql, data
+		return m.Run(ctx, req, func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, "SELECT 1")
+			return err
+		})
+	}
+	for _, user := range []string{"zmember", "zmon"} {
+		m, tg := login(user)
+		if err := run(m, tg, true, false); !errors.Is(err, athenspg.ErrReadLoginRequired) {
+			t.Errorf("%s editor: %v", user, err)
+		}
+		if err := run(m, tg, false, true); !errors.Is(err, athenspg.ErrReadLoginRequired) {
+			t.Errorf("%s grid without a usable read role: %v", user, err)
+		}
+		if err := run(m, tg, false, false); err != nil {
+			t.Errorf("%s catalog: %v", user, err)
+		}
+		if !m.PrivilegedRW(tg.ID) {
+			t.Errorf("%s not reported as privileged", user)
+		}
+		m.CloseAll()
+	}
+	m, tg := login("zplain")
+	defer m.CloseAll()
+	if err := run(m, tg, true, true); err != nil {
+		t.Fatalf("unprivileged login: %v", err)
+	}
+	if m.PrivilegedRW(tg.ID) {
+		t.Fatal("zplain reported as privileged")
+	}
+	// a privilege granted later is seen by the next transaction
+	if _, err := admin.Exec(ctx, "GRANT postgres TO zplain"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(m, tg, true, false); !errors.Is(err, athenspg.ErrReadLoginRequired) {
+		t.Fatalf("after GRANT postgres: %v", err)
+	}
+}

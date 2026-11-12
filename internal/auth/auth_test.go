@@ -256,8 +256,9 @@ func TestTamperedState(t *testing.T) {
 	if e.jar[version.SessionCookie] != nil {
 		t.Fatal("session created")
 	}
-	if a := e.lastAudit(audit.EventLoginDenied); a == nil || a.ErrorCode != "invalid_state" {
-		t.Fatalf("audit %+v", a)
+	// anonymous: counted and logged, never audited (ADR-027)
+	if a := e.lastAudit(audit.EventLoginDenied); a != nil {
+		t.Fatalf("state mismatch was audited: %+v", a)
 	}
 }
 
@@ -515,5 +516,18 @@ func TestProviderNotReady(t *testing.T) {
 	a.HandleLogin(w, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
 	if w.Code != 503 {
 		t.Fatalf("status %d", w.Code)
+	}
+}
+
+func TestPreAuthFailuresNotAudited(t *testing.T) {
+	e := newEnv(t, nil)
+	u := e.startLogin("/")
+	q := u.Query()
+	cbURL := e.srv.URL + "/auth/callback?state=" + url.QueryEscape(q.Get("state")) + "&error=access_denied&error_description=x"
+	if r := e.get(cbURL); r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d", r.StatusCode)
+	}
+	if a := e.lastAudit(audit.EventLoginDenied); a != nil {
+		t.Fatalf("an anonymous IdP error was audited: %+v", a)
 	}
 }

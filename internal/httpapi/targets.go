@@ -51,10 +51,13 @@ func (s *Server) mapDBError(err error, sql string) error {
 		return errTargetUnavailable
 	case errors.Is(err, pgconn.ErrNoDatabase):
 		return httpx.ErrNotFound
+	case errors.Is(err, pgconn.ErrDatabaseDenied):
+		return httpx.NewError(http.StatusForbidden, "database_denied", "the server does not allow connections to this database")
 	case errors.Is(err, pgconn.ErrReadLoginRequired):
 		return httpx.NewError(http.StatusForbidden, "read_login_required",
-			"read access to this database cannot use the SQL editor: its login is a superuser and no read-only login is configured. "+
-				"Browse the data in the grid, or ask the database owners to add the athens.warewave.io/readonly-secret annotation")
+			"read access to this database needs a read-only login: athens connects with a privileged login (superuser or similar), "+
+				"so read users cannot run SQL here (nor read rows when no read-only role is usable). "+
+				"Ask the database owners to add the athens.warewave.io/readonly-secret annotation")
 	case errors.Is(err, pgconn.ErrTimeout):
 		return errTimeout
 	case errors.Is(err, pgconn.ErrCancelled), errors.Is(err, context.Canceled):
@@ -114,6 +117,14 @@ func (s *Server) dbReq(r *http.Request, t discovery.Target, db string, lvl authz
 	return pgconn.Request{Target: t, Database: db, Level: lvl, Email: reqctx.UserFrom(r.Context()).Email, ReadOnly: true}
 }
 
+// dataReq is dbReq for reads of table rows (grid): refused for read users on
+// a privileged login without a usable read-only role (ADR-027).
+func (s *Server) dataReq(r *http.Request, t discovery.Target, db string, lvl authz.Level) pgconn.Request {
+	req := s.dbReq(r, t, db, lvl)
+	req.UserData = true
+	return req
+}
+
 type targetJSON struct {
 	ID          string   `json:"id"`
 	Namespace   string   `json:"namespace"`
@@ -143,7 +154,8 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 				j.Warnings = append(j.Warnings, "read-only credential was rejected; using rw credential with READ ONLY transactions")
 			}
 			if s.Pools.PrivilegedRW(t.ID) && t.RO == nil {
-				j.Warnings = append(j.Warnings, "read users cannot use the SQL editor: the main login is a superuser (or has REPLICATION/BYPASSRLS) "+
+				j.Warnings = append(j.Warnings, "read users cannot use the SQL editor (nor the grid without a usable read-only role): the main login "+
+					"is privileged (superuser, REPLICATION, BYPASSRLS, or member of such a role or of pg_monitor-like roles) "+
 					"and there is no read-only login; add athens.warewave.io/readonly-secret")
 			}
 			if role, checked := s.Pools.ReadRole(t.ID); checked && role == "" {

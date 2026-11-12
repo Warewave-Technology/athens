@@ -288,15 +288,21 @@ what their queries can do inside PostgreSQL itself, in this order:
    roles), read users stay on the main login in `READ ONLY` transactions,
    and admins see the warning "read users run on the main login".
 
-**A superuser main login needs a read-only login for the SQL editor.** If
-the main login is a superuser (or has `REPLICATION` or `BYPASSRLS`) and
-there is no `readonly-secret`, read users can browse data in the grid and
-see the structure, but the SQL editor refuses their queries
-(`read_login_required`). A role switch is not a boundary on such a login:
-any function that runs SQL can switch back with `set_config('role', ...)`.
-Admins see the warning "read users cannot use the SQL editor". Writers are
-not affected. Add a read-only login to give read users the editor
-(ADR-027).
+**A privileged main login needs a read-only login for read users.** A login
+counts as privileged when it is, or is a member of, a superuser, a
+`REPLICATION` or `BYPASSRLS` role, or one of `pg_monitor`,
+`pg_read_all_settings`, `pg_read_all_stats`, `pg_signal_backend` and the
+server-file roles. On such a login a role switch is not a boundary: any
+function that runs SQL can switch back with `set_config('role', ...)`, and
+settings such as `primary_conninfo` hold passwords. So, without a
+`readonly-secret`:
+- the SQL editor refuses read users' queries (`read_login_required`);
+- the grid also refuses them unless the read-only role is usable (it is on
+  PostgreSQL 14+ when the login is a superuser);
+- structure and listings keep working; writers are not affected;
+- admins see the warning "read users cannot use the SQL editor".
+
+Add a read-only login to give read users the full experience (ADR-027).
 
 Independent of the login or role, athens never shows the catalogs that hold
 credentials (`pg_authid`, `pg_shadow`, `pg_user_mapping`, `pg_subscription`, `information_schema._pg_user_mappings` ...), neither in the

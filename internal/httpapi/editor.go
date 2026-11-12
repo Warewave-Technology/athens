@@ -99,7 +99,26 @@ const (
 	maxSavedQueries = 500
 	maxDrafts       = 300
 	maxUIStateKeys  = 100
+	// maxUserBytes bounds a user's saved queries, drafts and UI state
+	// together; history is trimmed separately (store.historyBytes).
+	maxUserBytes = 16 << 20
 )
+
+// checkUserCaps refuses a new item, or growth by addBytes (the new size minus
+// the replaced item's size), beyond the caps.
+func (s *Server) checkUserCaps(r *http.Request, addBytes int, count func(store.UserItems) (int, int, string)) error {
+	items, err := s.Store.UserItems(r.Context(), reqctx.UserFrom(r.Context()).ID)
+	if err != nil {
+		return err
+	}
+	if n, limit, what := count(items); limit > 0 && n >= limit {
+		return errLimit(what, limit)
+	}
+	if addBytes > 0 && items.Bytes+int64(addBytes) > maxUserBytes {
+		return httpx.NewError(http.StatusConflict, "limit_reached", "your saved queries, drafts and settings use the 16 MiB allowed; delete some first")
+	}
+	return nil
+}
 
 var errLimit = func(what string, n int) error {
 	return httpx.NewError(http.StatusConflict, "limit_reached", fmt.Sprintf("you can keep at most %d %s; delete some first", n, what))
@@ -142,10 +161,10 @@ func (s *Server) createSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	if err := s.validateSavedQuery(r, req); err != nil {
 		return err
 	}
-	if saved, _, _, err := s.Store.UserItemCounts(r.Context(), reqctx.UserFrom(r.Context()).ID); err != nil {
+	if err := s.checkUserCaps(r, len(req.SQL), func(u store.UserItems) (int, int, string) {
+		return u.Saved, maxSavedQueries, "saved queries"
+	}); err != nil {
 		return err
-	} else if saved >= maxSavedQueries {
-		return errLimit("saved queries", maxSavedQueries)
 	}
 	q, err := s.Store.CreateSavedQuery(r.Context(), store.SavedQuery{
 		UserID: reqctx.UserFrom(r.Context()).ID, Name: strings.TrimSpace(req.Name), SQL: req.SQL, TargetID: req.TargetID, Database: req.Database,
@@ -158,6 +177,20 @@ func (s *Server) createSavedQuery(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
+// savedQuery returns the user's saved query id (404 if it is not theirs).
+func (s *Server) savedQuery(r *http.Request, id int64) (*store.SavedQuery, error) {
+	items, err := s.Store.ListSavedQueries(r.Context(), reqctx.UserFrom(r.Context()).ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if items[i].ID == id {
+			return &items[i], nil
+		}
+	}
+	return nil, httpx.ErrNotFound
+}
+
 func (s *Server) updateSavedQuery(w http.ResponseWriter, r *http.Request) error {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -168,6 +201,13 @@ func (s *Server) updateSavedQuery(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if err := s.validateSavedQuery(r, req); err != nil {
+		return err
+	}
+	old, err := s.savedQuery(r, id)
+	if err != nil {
+		return err
+	}
+	if err := s.checkUserCaps(r, len(req.SQL)-len(old.SQL), func(store.UserItems) (int, int, string) { return 0, 0, "" }); err != nil {
 		return err
 	}
 	q, err := s.Store.UpdateSavedQuery(r.Context(), store.SavedQuery{
@@ -251,12 +291,19 @@ func (s *Server) putDraft(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	uid := reqctx.UserFrom(r.Context()).ID
-	if _, drafts, _, err := s.Store.UserItemCounts(r.Context(), uid); err != nil {
-		return err
-	} else if drafts >= maxDrafts {
-		if _, err := s.Store.GetDraft(r.Context(), uid, draftTarget(r), r.PathValue("db")); errors.Is(err, store.ErrNotFound) {
-			return errLimit("drafts", maxDrafts)
+	old, gerr := s.Store.GetDraft(r.Context(), uid, draftTarget(r), r.PathValue("db"))
+	isNew := errors.Is(gerr, store.ErrNotFound)
+	grow := len(req.SQL)
+	if !isNew && old != nil {
+		grow -= len(old.SQL)
+	}
+	if err := s.checkUserCaps(r, grow, func(u store.UserItems) (int, int, string) {
+		if !isNew {
+			return 0, 0, "" // replacing an existing draft
 		}
+		return u.Drafts, maxDrafts, "drafts"
+	}); err != nil {
+		return err
 	}
 	d, err := s.Store.PutDraft(r.Context(), reqctx.UserFrom(r.Context()).ID, draftTarget(r), r.PathValue("db"), req.SQL)
 	if err != nil {
