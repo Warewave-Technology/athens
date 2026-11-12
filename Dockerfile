@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Web and Go stages run on the build platform and cross-compile, so
 # multi-arch images build without emulation.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:25-alpine AS web
 WORKDIR /src/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
