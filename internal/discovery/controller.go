@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,7 +38,8 @@ type APIResources interface {
 	ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error)
 }
 
-// Controller runs namespaced informers and rebuilds the registry (§2).
+// Controller runs informers over the watched namespaces (or the whole
+// cluster, ADR-024) and rebuilds the registry per namespace (§2).
 type Controller struct {
 	client     kubernetes.Interface
 	dyn        dynamic.Interface
@@ -48,11 +51,14 @@ type Controller struct {
 	log        *slog.Logger
 	crdPoll    time.Duration
 
-	nss    map[string]*nsWatch
+	scopes []*scope // one per namespace, or a single cluster-wide scope
+	mu     sync.Mutex
+	timers map[string]*time.Timer // debounced rebuilds per namespace
 	synced atomic.Bool
 }
 
-type nsWatch struct {
+// scope is one set of informers: a namespace, or all namespaces when ns is "".
+type scope struct {
 	ns       string
 	factory  informers.SharedInformerFactory
 	sts      appslisters.StatefulSetLister
@@ -64,13 +70,13 @@ type nsWatch struct {
 	mu      sync.Mutex
 	crds    map[schema.GroupVersionResource]cache.GenericLister
 	crdSync []cache.InformerSynced
-	timer   *time.Timer
 }
 
 type ControllerOptions struct {
-	Client     kubernetes.Interface
-	Dynamic    dynamic.Interface
-	Discovery  APIResources
+	Client    kubernetes.Interface
+	Dynamic   dynamic.Interface
+	Discovery APIResources
+	// Namespaces limits the watch; empty watches the whole cluster.
 	Namespaces []string
 	Resync     time.Duration
 	Options    Options
@@ -85,29 +91,35 @@ func NewController(o ControllerOptions) *Controller {
 		o.CRDPoll = 5 * time.Minute
 	}
 	return &Controller{client: o.Client, dyn: o.Dynamic, disco: o.Discovery, namespaces: o.Namespaces, resync: o.Resync,
-		opt: o.Options, reg: o.Registry, log: o.Log, crdPoll: o.CRDPoll, nss: map[string]*nsWatch{}}
+		opt: o.Options, reg: o.Registry, log: o.Log, crdPoll: o.CRDPoll, timers: map[string]*time.Timer{}}
 }
 
 // Synced reports whether the initial cache sync finished (readiness).
 func (c *Controller) Synced() bool { return c.synced.Load() }
 
+func (c *Controller) clusterWide() bool { return len(c.namespaces) == 0 }
+
 // Run starts informers, waits for the initial sync (up to syncTimeout; the
 // controller keeps running afterwards either way) and blocks until ctx ends.
 func (c *Controller) Run(ctx context.Context, syncTimeout time.Duration) {
-	for _, ns := range c.namespaces {
-		w := &nsWatch{ns: ns, crds: map[schema.GroupVersionResource]cache.GenericLister{}}
-		w.factory = informers.NewSharedInformerFactoryWithOptions(c.client, c.resync, informers.WithNamespace(ns))
-		sts := w.factory.Apps().V1().StatefulSets()
-		dep := w.factory.Apps().V1().Deployments()
-		svc := w.factory.Core().V1().Services()
-		w.sts, w.deploy, w.svc = sts.Lister(), dep.Lister(), svc.Lister()
+	nss := c.namespaces
+	if c.clusterWide() {
+		nss = []string{metav1.NamespaceAll}
+	}
+	for _, ns := range nss {
+		s := &scope{ns: ns, crds: map[schema.GroupVersionResource]cache.GenericLister{}}
+		s.factory = informers.NewSharedInformerFactoryWithOptions(c.client, c.resync, informers.WithNamespace(ns))
+		sts := s.factory.Apps().V1().StatefulSets()
+		dep := s.factory.Apps().V1().Deployments()
+		svc := s.factory.Core().V1().Services()
+		s.sts, s.deploy, s.svc = sts.Lister(), dep.Lister(), svc.Lister()
 		for _, inf := range []cache.SharedIndexInformer{sts.Informer(), dep.Informer(), svc.Informer()} {
-			c.addHandler(inf, w)
-			w.typedOK = append(w.typedOK, inf.HasSynced)
+			c.addHandler(inf)
+			s.typedOK = append(s.typedOK, inf.HasSynced)
 		}
-		w.dfactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(c.dyn, c.resync, ns, nil)
-		c.nss[ns] = w
-		w.factory.Start(ctx.Done())
+		s.dfactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(c.dyn, c.resync, ns, nil)
+		c.scopes = append(c.scopes, s)
+		s.factory.Start(ctx.Done())
 	}
 	c.checkCRDs(ctx)
 
@@ -138,26 +150,87 @@ func (c *Controller) Run(ctx context.Context, syncTimeout time.Duration) {
 }
 
 func (c *Controller) markSynced() {
-	for _, w := range c.nss {
-		c.rebuild(w)
+	nss := c.namespaces
+	if c.clusterWide() {
+		nss = c.populatedNamespaces()
+	}
+	for _, ns := range nss {
+		c.rebuild(ns)
 	}
 	c.synced.Store(true)
-	c.log.Info("discovery synced", "namespaces", len(c.nss), "targets", len(c.reg.List()))
+	scope := "cluster"
+	if !c.clusterWide() {
+		scope = strings.Join(c.namespaces, ",")
+	}
+	c.log.Info("discovery synced", "scope", scope, "targets", len(c.reg.List()))
+}
+
+// populatedNamespaces lists the namespaces that hold any watched object.
+func (c *Controller) populatedNamespaces() []string {
+	seen := map[string]bool{}
+	s := c.scopes[0]
+	if l, err := s.sts.List(labels.Everything()); err == nil {
+		for _, o := range l {
+			seen[o.Namespace] = true
+		}
+	}
+	if l, err := s.deploy.List(labels.Everything()); err == nil {
+		for _, o := range l {
+			seen[o.Namespace] = true
+		}
+	}
+	if l, err := s.svc.List(labels.Everything()); err == nil {
+		for _, o := range l {
+			seen[o.Namespace] = true
+		}
+	}
+	s.mu.Lock()
+	for _, l := range s.crds {
+		if items, err := l.List(labels.Everything()); err == nil {
+			for _, it := range items {
+				if m, ok := it.(metav1.Object); ok {
+					seen[m.GetNamespace()] = true
+				}
+			}
+		}
+	}
+	s.mu.Unlock()
+	out := make([]string, 0, len(seen))
+	for ns := range seen {
+		out = append(out, ns)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (c *Controller) allSynced() []cache.InformerSynced {
 	var out []cache.InformerSynced
-	for _, w := range c.nss {
-		out = append(out, w.typedOK...)
-		w.mu.Lock()
-		out = append(out, w.crdSync...)
-		w.mu.Unlock()
+	for _, s := range c.scopes {
+		out = append(out, s.typedOK...)
+		s.mu.Lock()
+		out = append(out, s.crdSync...)
+		s.mu.Unlock()
 	}
 	return out
 }
 
-func (c *Controller) addHandler(inf cache.SharedIndexInformer, w *nsWatch) {
-	trigger := func(any) { c.schedule(w) }
+// namespaceOf returns the namespace of an informer event object.
+func namespaceOf(obj any) string {
+	if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		obj = d.Obj
+	}
+	if m, ok := obj.(metav1.Object); ok {
+		return m.GetNamespace()
+	}
+	return ""
+}
+
+func (c *Controller) addHandler(inf cache.SharedIndexInformer) {
+	trigger := func(obj any) {
+		if ns := namespaceOf(obj); ns != "" {
+			c.schedule(ns)
+		}
+	}
 	_, _ = inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    trigger,
 		UpdateFunc: func(_, n any) { trigger(n) },
@@ -166,21 +239,21 @@ func (c *Controller) addHandler(inf cache.SharedIndexInformer, w *nsWatch) {
 }
 
 // schedule debounces rebuilds of one namespace.
-func (c *Controller) schedule(w *nsWatch) {
+func (c *Controller) schedule(ns string) {
 	if !c.synced.Load() {
 		return // the initial rebuild runs after sync
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.timer != nil {
-		w.timer.Reset(debounce)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if t := c.timers[ns]; t != nil {
+		t.Reset(debounce)
 		return
 	}
-	w.timer = time.AfterFunc(debounce, func() {
-		w.mu.Lock()
-		w.timer = nil
-		w.mu.Unlock()
-		c.rebuild(w)
+	c.timers[ns] = time.AfterFunc(debounce, func() {
+		c.mu.Lock()
+		delete(c.timers, ns)
+		c.mu.Unlock()
+		c.rebuild(ns)
 	})
 }
 
@@ -197,19 +270,19 @@ func (c *Controller) checkCRDs(ctx context.Context) {
 		if !c.crdPresent(gvr) {
 			continue
 		}
-		for _, w := range c.nss {
-			w.mu.Lock()
-			_, started := w.crds[gvr]
+		for _, s := range c.scopes {
+			s.mu.Lock()
+			_, started := s.crds[gvr]
 			if !started {
-				gi := w.dfactory.ForResource(gvr)
-				w.crds[gvr] = gi.Lister()
-				w.crdSync = append(w.crdSync, gi.Informer().HasSynced)
-				c.addHandler(gi.Informer(), w)
+				gi := s.dfactory.ForResource(gvr)
+				s.crds[gvr] = gi.Lister()
+				s.crdSync = append(s.crdSync, gi.Informer().HasSynced)
+				c.addHandler(gi.Informer())
 			}
-			w.mu.Unlock()
+			s.mu.Unlock()
 			if !started {
-				w.dfactory.Start(ctx.Done())
-				c.log.Info("watching custom resource", "namespace", w.ns, "resource", gvr.String())
+				s.dfactory.Start(ctx.Done())
+				c.log.Info("watching custom resource", "namespace", s.ns, "resource", gvr.String())
 			}
 		}
 	}
@@ -231,38 +304,55 @@ func (c *Controller) crdPresent(gvr schema.GroupVersionResource) bool {
 	return false
 }
 
-func (c *Controller) rebuild(w *nsWatch) {
-	objs, err := w.objects()
+// scopeFor returns the informers covering ns, or nil if ns is not watched.
+func (c *Controller) scopeFor(ns string) *scope {
+	for _, s := range c.scopes {
+		if s.ns == metav1.NamespaceAll || s.ns == ns {
+			return s
+		}
+	}
+	return nil
+}
+
+func (c *Controller) rebuild(ns string) {
+	s := c.scopeFor(ns)
+	if s == nil {
+		return
+	}
+	objs, err := s.objects(ns)
 	if err != nil {
-		c.log.Error("discovery rebuild", "namespace", w.ns, "err", err)
-		c.reg.SetNamespaceError(w.ns, err, time.Now())
+		c.log.Error("discovery rebuild", "namespace", ns, "err", err)
+		c.reg.SetNamespaceError(ns, err, time.Now())
 		return
 	}
 	targets, problems := Build(objs, c.opt)
 	for _, p := range problems {
 		c.log.Debug("discovery problem", "namespace", p.Namespace, "kind", p.Object.Kind, "name", p.Object.Name, "reason", p.Reason, "message", p.Message)
 	}
-	for _, e := range c.reg.SetNamespace(w.ns, targets, problems, time.Now()) {
+	for _, e := range c.reg.SetNamespace(ns, targets, problems, time.Now()) {
 		c.log.Info("discovery target "+string(e.Type), "target", e.Target.ID, "source", e.Target.Source)
+	}
+	if c.clusterWide() && len(targets) == 0 && len(problems) == 0 {
+		c.reg.Forget(ns) // keep the admin page to namespaces that matter
 	}
 }
 
-func (w *nsWatch) objects() (Objects, error) {
-	o := Objects{Namespace: w.ns}
+func (s *scope) objects(ns string) (Objects, error) {
+	o := Objects{Namespace: ns}
 	var err error
-	if o.StatefulSets, err = w.sts.StatefulSets(w.ns).List(labels.Everything()); err != nil {
+	if o.StatefulSets, err = s.sts.StatefulSets(ns).List(labels.Everything()); err != nil {
 		return o, err
 	}
-	if o.Deployments, err = w.deploy.Deployments(w.ns).List(labels.Everything()); err != nil {
+	if o.Deployments, err = s.deploy.Deployments(ns).List(labels.Everything()); err != nil {
 		return o, err
 	}
-	if o.Services, err = w.svc.Services(w.ns).List(labels.Everything()); err != nil {
+	if o.Services, err = s.svc.Services(ns).List(labels.Everything()); err != nil {
 		return o, err
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	for gvr, l := range w.crds {
-		items, err := l.ByNamespace(w.ns).List(labels.Everything())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for gvr, l := range s.crds {
+		items, err := l.ByNamespace(ns).List(labels.Everything())
 		if err != nil {
 			return o, err
 		}
@@ -284,8 +374,8 @@ func (w *nsWatch) objects() (Objects, error) {
 // PodSpec returns the cached pod template of a workload (literal env
 // credentials, credentials.WorkloadLookup).
 func (c *Controller) PodSpec(namespace string, ref ObjectRef) (*corev1.PodSpec, error) {
-	w, ok := c.nss[namespace]
-	if !ok {
+	w := c.scopeFor(namespace)
+	if w == nil {
 		return nil, fmt.Errorf("namespace %q is not watched", namespace)
 	}
 	switch ref.Kind {

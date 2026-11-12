@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "pg",
       "displayName": "pg",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "pg",
@@ -36,7 +36,8 @@
         "team": "core"
       },
       "warnings": [
-        "plaintext password in pod spec (POSTGRES_PASSWORD)"
+        "plaintext password in pod spec (POSTGRES_PASSWORD)",
+        "no athens.warewave.io/access annotation; nobody can use this target"
       ]
     }
   ],

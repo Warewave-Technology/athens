@@ -15,15 +15,12 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-// testOptions uses automatic discovery so the golden files cover every
-// source; annotation-only mode (the default) has its own test.
 func testOptions(t *testing.T) Options {
 	t.Helper()
 	opt, err := OptionsFromConfig(config.Default().Discovery)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opt.RequireAnnotation = false
 	return opt
 }
 
@@ -37,16 +34,10 @@ func load(t *testing.T, f string) Objects {
 		Services: set.Services, CNPG: set.CNPG, Zalando: set.Zalando}
 }
 
-// TestAnnotationOnly runs every fixture with the default configuration:
-// only objects annotated enabled=true may become targets.
-func TestAnnotationOnly(t *testing.T) {
-	opt, err := OptionsFromConfig(config.Default().Discovery)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !opt.RequireAnnotation {
-		t.Fatal("annotation-only must be the default")
-	}
+// TestUnannotatedIgnored: objects without enabled=true never become targets,
+// including operator-owned workloads and unannotated operator clusters.
+func TestUnannotatedIgnored(t *testing.T) {
+	opt := testOptions(t)
 	files, _ := filepath.Glob("testdata/*.yaml")
 	var got []string
 	for _, f := range files {
@@ -55,16 +46,16 @@ func TestAnnotationOnly(t *testing.T) {
 			got = append(got, tg.ID+"="+string(tg.Source))
 		}
 	}
-	want := []string{
-		"demo/analytics=annotation", // annotated Service
-		"demo/legacy=annotation",    // annotated StatefulSet
-		"demo/billing=cnpg",         // annotated CNPG Cluster
-		"demo/acid-ledger=zalando",  // annotated Zalando postgresql
-		"demo/crm=annotation",       // readonly + access
-		"demo/locked=annotation",    // empty access
+	for _, unwanted := range []string{"demo/scratchpad=", "demo/acid-unlisted=", "demo/payments-db-shadow=", "demo/acid-minimal=annotation",
+		"demo/ignored=", "demo/also-ignored=", "demo/ignored-cluster="} {
+		for _, g := range got {
+			if strings.HasPrefix(g, unwanted) {
+				t.Errorf("unannotated or opted-out object became a target: %s", g)
+			}
+		}
 	}
-	if strings.Join(sorted(got), ",") != strings.Join(sorted(want), ",") {
-		t.Fatalf("annotation-only targets = %v, want %v", got, want)
+	if len(got) < 15 {
+		t.Fatalf("too few targets, fixtures not annotated? %v", sorted(got))
 	}
 }
 

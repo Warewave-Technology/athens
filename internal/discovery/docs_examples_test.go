@@ -44,6 +44,9 @@ func TestDocsExamples(t *testing.T) {
 			if len(problems) != 0 || len(targets) != 1 {
 				t.Fatalf("targets %+v problems %+v", targets, problems)
 			}
+			if targets[0].Access == nil || len(targets[0].Access.Grants) == 0 {
+				t.Fatalf("example must carry an access annotation: %+v", targets[0])
+			}
 			if !tc.check(targets[0]) {
 				t.Fatalf("%s: unexpected target %+v", tc.detail, targets[0])
 			}

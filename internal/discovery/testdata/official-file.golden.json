@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "files",
       "displayName": "files",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "files",
@@ -34,7 +34,10 @@
             "key": "password"
           }
         }
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": null

@@ -9,6 +9,7 @@ metadata:
   name: crm-flexible
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "crm-admins:rw, sales-analysts:ro"
     athens.warewave.io/secret: crm-flexible-login
     athens.warewave.io/database: crm
     athens.warewave.io/sslmode: verify-ca

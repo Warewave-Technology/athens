@@ -5,6 +5,7 @@ metadata:
   namespace: athens-demo
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"
     athens.warewave.io/environment: staging
 spec:
   instances: 1

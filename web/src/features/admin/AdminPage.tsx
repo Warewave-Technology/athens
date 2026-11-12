@@ -210,7 +210,6 @@ function AuditView() {
 
 interface DiscoveryResp {
   synced: boolean;
-  annotationAccess: boolean;
   namespaces: {
     namespace: string;
     lastRebuild: string;
@@ -240,8 +239,8 @@ interface DiscoveryResp {
   }[];
 }
 
-function AccessCell({ t, honored }: { t: DiscoveryResp["targets"][number]; honored: boolean }) {
-  const grants = honored ? t.access?.grants : undefined;
+function AccessCell({ t }: { t: DiscoveryResp["targets"][number] }) {
+  const grants = t.access?.grants;
   return (
     <div className="access-cell">
       {t.readOnly && <span className="badge env-production">read-only</span>}
@@ -256,8 +255,8 @@ function AccessCell({ t, honored }: { t: DiscoveryResp["targets"][number]; honor
           <span className="error-text">nobody</span>
         )
       ) : (
-        <span className="muted">
-          config rules{t.access ? " (annotation ignored: authz.annotationAccess is off)" : ""}
+        <span className="error-text" title="Add the athens.warewave.io/access annotation">
+          no access annotation
         </span>
       )}
     </div>
@@ -268,7 +267,6 @@ const sourceLabel: Record<string, string> = {
   annotation: "Annotation",
   cnpg: "CloudNativePG",
   zalando: "Zalando operator",
-  generic: "Image detection",
 };
 
 function DiscoveryView() {
@@ -355,7 +353,7 @@ function DiscoveryView() {
                   <EnvBadge env={t.environment ?? ""} />
                 </td>
                 <td>
-                  <AccessCell t={t} honored={q.data.annotationAccess} />
+                  <AccessCell t={t} />
                 </td>
                 <td>{t.ro ? "Yes" : <span className="muted">No</span>}</td>
                 <td className="warn-cell">

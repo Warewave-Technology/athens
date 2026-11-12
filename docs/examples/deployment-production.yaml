@@ -32,6 +32,7 @@ metadata:
   name: billing-db
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "dba:rw, billing-dev:ro"
     athens.warewave.io/secret: billing-db-admin          # keys username / password
     athens.warewave.io/readonly-secret: billing-db-ro    # used for read access
     athens.warewave.io/database: billing

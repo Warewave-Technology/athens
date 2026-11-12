@@ -30,7 +30,10 @@
             "key": "password"
           }
         }
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": [

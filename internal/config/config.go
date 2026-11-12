@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -84,41 +83,30 @@ type Auth struct {
 	IdleTTL    Duration `yaml:"idleTTL"`
 }
 
+// Authz holds the global switches. Who may use a database comes only from
+// its <prefix>/access annotation (ADR-023).
 type Authz struct {
 	ReadOnly    bool     `yaml:"readOnly"`
 	AdminGroups []string `yaml:"adminGroups"`
-	Rules       []Rule   `yaml:"rules"`
-	// AnnotationAccess lets the <prefix>/access annotation replace the rules
-	// for its target (ADR-022). The readonly annotation always applies.
-	AnnotationAccess bool `yaml:"annotationAccess"`
-	// GroupAliases maps names usable in access annotations to Entra group
-	// IDs, e.g. {"system-admins": "3f2a..."}.
+	// GroupAliases optionally maps names usable in access annotations to
+	// Entra group IDs, e.g. {"system-admins": "3f2a..."}.
 	GroupAliases map[string]string `yaml:"groupAliases"`
 }
 
-type Rule struct {
-	Name       string   `yaml:"name"`
-	Groups     []string `yaml:"groups"`
-	Namespaces []string `yaml:"namespaces"`
-	Targets    []string `yaml:"targets"`
-	Databases  []string `yaml:"databases"`
-	Level      string   `yaml:"level"`
-}
-
+// Discovery finds databases by annotation only (ADR-020, ADR-024).
 type Discovery struct {
+	// Namespaces optionally limits the watch; empty watches the cluster.
 	Namespaces       []string `yaml:"namespaces"`
 	Resync           Duration `yaml:"resync"`
 	UseFQDN          bool     `yaml:"useFQDN"`
 	ClusterDomain    string   `yaml:"clusterDomain"`
 	DefaultSSLMode   string   `yaml:"defaultSSLMode"`
 	AnnotationPrefix string   `yaml:"annotationPrefix"`
-	// RequireAnnotation limits discovery to objects carrying
-	// <annotationPrefix>/enabled: "true" (ADR-020). When false, unannotated
-	// postgres workloads and operator clusters are found automatically.
-	RequireAnnotation bool    `yaml:"requireAnnotation"`
-	CNPG              CNPG    `yaml:"cnpg"`
-	Zalando           Zalando `yaml:"zalando"`
-	Generic           Generic `yaml:"generic"`
+	// ImagePattern picks the postgres container of an annotated workload
+	// (else the first container is used).
+	ImagePattern string  `yaml:"imagePattern"`
+	CNPG         CNPG    `yaml:"cnpg"`
+	Zalando      Zalando `yaml:"zalando"`
 }
 
 type CNPG struct {
@@ -131,11 +119,6 @@ type Zalando struct {
 	Enabled        bool   `yaml:"enabled"`
 	UseSuperuser   bool   `yaml:"useSuperuser"`
 	SecretTemplate string `yaml:"secretTemplate"`
-}
-
-type Generic struct {
-	Enabled      bool   `yaml:"enabled"`
-	ImagePattern string `yaml:"imagePattern"`
 }
 
 type Limits struct {
@@ -179,20 +162,18 @@ func Default() Config {
 				TokenFile: "/var/run/secrets/azure/tokens/azure-identity-token", // #nosec G101 -- file path
 			},
 		},
-		Auth:  Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
-		Authz: Authz{AnnotationAccess: true},
+		Auth: Auth{SessionTTL: Duration(8 * time.Hour), IdleTTL: Duration(time.Hour)},
 		Discovery: Discovery{
-			Resync:            Duration(10 * time.Minute),
-			ClusterDomain:     "cluster.local",
-			DefaultSSLMode:    "prefer",
-			AnnotationPrefix:  version.DefaultAnnotationPrefix,
-			RequireAnnotation: true,
-			CNPG:              CNPG{Enabled: true},
+			Resync:           Duration(10 * time.Minute),
+			ClusterDomain:    "cluster.local",
+			DefaultSSLMode:   "prefer",
+			AnnotationPrefix: version.DefaultAnnotationPrefix,
+			ImagePattern:     DefaultImagePattern,
+			CNPG:             CNPG{Enabled: true},
 			Zalando: Zalando{
 				Enabled:        true,
 				SecretTemplate: "{username}.{cluster}.credentials.postgresql.acid.zalan.do", // #nosec G101 -- secret name template, not a credential
 			},
-			Generic: Generic{Enabled: true, ImagePattern: DefaultImagePattern},
 		},
 		Limits: Limits{
 			StatementTimeout:         Duration(30 * time.Second),
@@ -219,6 +200,9 @@ func Load(file string, environ []string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
+		if err := checkRemoved(b); err != nil {
+			return nil, fmt.Errorf("config %s: %w", file, err)
+		}
 		dec := yaml.NewDecoder(strings.NewReader(string(b)))
 		dec.KnownFields(true)
 		if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
@@ -232,6 +216,36 @@ func Load(file string, environ []string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// removedKeys are settings that no longer exist, with what replaces them.
+var removedKeys = []struct{ path, hint string }{
+	{"authz.rules", "access comes from the <prefix>/access annotation on each database (ADR-023)"},
+	{"authz.annotationAccess", "the access annotation is the only source of access now (ADR-023)"},
+	{"discovery.requireAnnotation", "discovery is always by annotation (ADR-024)"},
+	{"discovery.generic", "use discovery.imagePattern to pick the postgres container (ADR-024)"},
+}
+
+// checkRemoved turns removed settings into a clear error instead of the
+// decoder's generic "field not found".
+func checkRemoved(b []byte) error {
+	var m map[string]any
+	if err := yaml.Unmarshal(b, &m); err != nil {
+		return nil //nolint:nilerr // the strict decoder reports syntax errors
+	}
+	var errs []string
+	for _, k := range removedKeys {
+		section, key, _ := strings.Cut(k.path, ".")
+		if sub, ok := m[section].(map[string]any); ok {
+			if _, ok := sub[key]; ok {
+				errs = append(errs, fmt.Sprintf("%s was removed: %s", k.path, k.hint))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // applyEnv walks the struct and overrides every scalar (and string slice,
@@ -382,36 +396,12 @@ func (c *Config) Validate() error {
 		add("auth.sessionTTL and auth.idleTTL must be positive")
 	}
 
-	for i, r := range c.Authz.Rules {
-		where := fmt.Sprintf("authz.rules[%d]", i)
-		if r.Name != "" {
-			where += " (" + r.Name + ")"
-		}
-		if len(r.Groups) == 0 {
-			add("%s: groups must not be empty", where)
-		}
-		if r.Level != "read" && r.Level != "write" {
-			add("%s: level must be read or write, got %q", where, r.Level)
-		}
-		if len(r.Namespaces) == 0 && len(r.Targets) == 0 && len(r.Databases) == 0 {
-			add("%s: at least one of namespaces, targets, databases is required", where)
-		}
-		for _, g := range append(append(append([]string{}, r.Namespaces...), r.Targets...), r.Databases...) {
-			if _, err := path.Match(g, ""); err != nil {
-				add("%s: invalid glob %q", where, g)
-			}
-		}
-	}
-
 	for name, id := range c.Authz.GroupAliases {
 		if name == "" || id == "" || strings.ContainsAny(name, ":, \t") {
 			add("authz.groupAliases: %q -> %q: names must be non-empty without ':', ',' or spaces, IDs non-empty", name, id)
 		}
 	}
 
-	if len(c.Discovery.Namespaces) == 0 {
-		add("discovery.namespaces must not be empty")
-	}
 	for _, ns := range c.Discovery.Namespaces {
 		if ns == "*" || strings.ContainsAny(ns, "*?[") {
 			add("discovery.namespaces: wildcards are not allowed (%q), list namespaces explicitly", ns)
@@ -428,10 +418,8 @@ func (c *Config) Validate() error {
 	if c.Discovery.Resync <= 0 {
 		add("discovery.resync must be positive")
 	}
-	if c.Discovery.Generic.Enabled {
-		if _, err := regexp.Compile(c.Discovery.Generic.ImagePattern); err != nil {
-			add("discovery.generic.imagePattern: %v", err)
-		}
+	if _, err := regexp.Compile(c.Discovery.ImagePattern); err != nil {
+		add("discovery.imagePattern: %v", err)
 	}
 	if c.Discovery.Zalando.Enabled && !strings.Contains(c.Discovery.Zalando.SecretTemplate, "{username}") {
 		add("discovery.zalando.secretTemplate must contain {username}")

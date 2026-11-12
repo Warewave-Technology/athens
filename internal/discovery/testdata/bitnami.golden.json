@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "my-release-postgresql",
       "displayName": "my-release-postgresql",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "my-release-postgresql",
@@ -31,7 +31,10 @@
         "app.kubernetes.io/component": "primary",
         "app.kubernetes.io/instance": "my-release",
         "app.kubernetes.io/name": "postgresql"
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": null

@@ -5,6 +5,7 @@ metadata:
   uid: uid-cnpg
   labels: {team: payments}
   annotations:
+    athens.warewave.io/enabled: "true"
     athens.warewave.io/environment: production
     athens.warewave.io/display-name: Payments
     athens.warewave.io/readonly-secret: payments-db-readonly
@@ -15,7 +16,7 @@ spec:
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
-metadata: {name: reports, uid: uid-cnpg-2}
+metadata: {name: reports, uid: uid-cnpg-2, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   instances: 1
   enableSuperuserAccess: true

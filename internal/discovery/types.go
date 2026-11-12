@@ -8,7 +8,6 @@ const (
 	SourceAnnotation SourceKind = "annotation"
 	SourceCNPG       SourceKind = "cnpg"
 	SourceZalando    SourceKind = "zalando"
-	SourceGeneric    SourceKind = "generic"
 )
 
 func (s SourceKind) priority() int {
@@ -17,10 +16,8 @@ func (s SourceKind) priority() int {
 		return 0
 	case SourceCNPG:
 		return 1
-	case SourceZalando:
-		return 2
 	default:
-		return 3
+		return 2
 	}
 }
 

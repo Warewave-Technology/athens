@@ -4,8 +4,6 @@ config:
   oidc: {issuer: "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0", clientID: "app"}
   authz:
     adminGroups: ["admins"]
-    rules: [{name: dba, groups: ["dba"], namespaces: ["*"], level: write}]
-  discovery: {namespaces: ["payments", "orders"]}
 secret: {clientSecret: "x", sessionKey: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="}
 ingress: {enabled: true, className: nginx}
 serviceMonitor: {enabled: true}

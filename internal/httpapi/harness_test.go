@@ -45,8 +45,12 @@ type harnessOpts struct {
 	mutate  func(*config.Config)
 }
 
-// testRules: readers read everything in itest/demo, writers write, bi reads
-// only database "app" of targets named "bi-*", admins are app admins.
+// testAccess is the access annotation of the test targets: readers read,
+// writers write. "admins" are app admins without data access.
+var testAccess = &discovery.AccessPolicy{Grants: []discovery.AccessGrant{
+	{Group: "readers", Level: "read"}, {Group: "writers", Level: "write"},
+}}
+
 func testConfig() config.Config {
 	cfg := config.Default()
 	cfg.Server.BaseURL = "http://athens.test"
@@ -57,11 +61,6 @@ func testConfig() config.Config {
 	cfg.Auth.SessionKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 	cfg.Discovery.Namespaces = []string{"itest", "demo"}
 	cfg.Authz.AdminGroups = []string{"admins"}
-	cfg.Authz.Rules = []config.Rule{
-		{Name: "readers", Groups: []string{"readers"}, Namespaces: []string{"itest", "demo"}, Level: "read"},
-		{Name: "writers", Groups: []string{"writers"}, Namespaces: []string{"itest", "demo"}, Level: "write"},
-		{Name: "bi", Groups: []string{"bi"}, Namespaces: []string{"*"}, Targets: []string{"bi-*"}, Databases: []string{"app"}, Level: "read"},
-	}
 	return cfg
 }
 

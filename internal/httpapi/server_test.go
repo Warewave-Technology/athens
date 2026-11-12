@@ -56,10 +56,11 @@ func TestBodyLimit(t *testing.T) {
 }
 
 func TestTargetsVisibility(t *testing.T) {
+	biOnly := &discovery.AccessPolicy{Grants: []discovery.AccessGrant{{Group: "bi", Level: "write"}}}
 	targets := []discovery.Target{
-		{ID: "demo/orders", Namespace: "demo", Name: "orders", DisplayName: "Orders", Source: "generic", Warnings: []string{"w1"}},
-		{ID: "demo/bi-warehouse", Namespace: "demo", Name: "bi-warehouse", Source: "cnpg", Environment: "production"},
-		{ID: "other/secret", Namespace: "other", Name: "secret", Source: "generic"},
+		{ID: "demo/orders", Namespace: "demo", Name: "orders", DisplayName: "Orders", Source: "annotation", Warnings: []string{"w1"}, Access: testAccess},
+		{ID: "demo/bi-warehouse", Namespace: "demo", Name: "bi-warehouse", Source: "cnpg", Environment: "production", Access: biOnly, ReadOnly: true},
+		{ID: "other/unlisted", Namespace: "other", Name: "unlisted", Source: "annotation"}, // no access annotation
 	}
 	h := newHarness(t, harnessOpts{targets: targets})
 	list := func(c *client) []targetJSON {
@@ -68,31 +69,29 @@ func TestTargetsVisibility(t *testing.T) {
 		return out.Targets
 	}
 	if got := list(h.login("nobody@example.com")); len(got) != 0 {
-		t.Fatalf("no-rule user sees %+v", got)
+		t.Fatalf("user without grants sees %+v", got)
 	}
 	bi := h.login("bi@example.com", "bi")
 	if got := list(bi); len(got) != 1 || got[0].ID != "demo/bi-warehouse" || got[0].Level != "read" || got[0].Warnings != nil {
-		t.Fatalf("bi sees %+v", got)
+		t.Fatalf("bi sees %+v (readonly must cap rw)", got)
 	}
 	if r := bi.get("/api/v1/targets/demo/orders/databases"); r.status != 404 {
 		t.Fatalf("invisible target: %d", r.status)
 	}
-	if r := bi.get("/api/v1/targets/demo/bi-warehouse/db/other/schemas"); r.status != 404 {
-		t.Fatalf("invisible database: %d", r.status)
-	}
-	if r := bi.get("/api/v1/targets/other/secret/databases"); r.status != 404 {
-		t.Fatalf("other ns: %d", r.status)
-	}
 	w := h.login("w@example.com", "writers", "admins")
 	got := list(w)
-	if len(got) != 2 || got[1].Level != "write" || len(got[1].Warnings) != 1 || got[1].Status != "unknown" {
+	if len(got) != 1 || got[0].ID != "demo/orders" || got[0].Level != "write" || len(got[0].Warnings) != 1 || got[0].Status != "unknown" {
 		t.Fatalf("writer/admin sees %+v", got)
 	}
-	// admin endpoints are 404 for non-admins
+	// a target without an access annotation is invisible to everyone, admins included
+	if r := w.get("/api/v1/targets/other/unlisted/databases"); r.status != 404 {
+		t.Fatalf("unlisted target: %d", r.status)
+	}
+	// admin endpoints are 404 for non-admins; admins see every target there
 	if r := bi.get("/api/v1/admin/discovery"); r.status != 404 {
 		t.Fatalf("admin discovery for non-admin: %d", r.status)
 	}
-	if r := w.get("/api/v1/admin/discovery"); r.status != 200 || !strings.Contains(string(r.body), "demo/orders") {
+	if r := w.get("/api/v1/admin/discovery"); r.status != 200 || !strings.Contains(string(r.body), "other/unlisted") {
 		t.Fatalf("admin discovery: %d", r.status)
 	}
 }

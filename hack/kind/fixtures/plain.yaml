@@ -15,7 +15,7 @@ kind: StatefulSet
 metadata:
   name: orders-db
   namespace: athens-demo
-  annotations: {athens.warewave.io/enabled: "true"}
+  annotations: {athens.warewave.io/enabled: "true", athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"}
 spec:
   serviceName: orders-db
   selector: {matchLabels: {app: orders-db}}
@@ -49,7 +49,7 @@ kind: Deployment
 metadata:
   name: scratch-db
   namespace: athens-demo
-  annotations: {athens.warewave.io/enabled: "true"}
+  annotations: {athens.warewave.io/enabled: "true", athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"}
 spec:
   selector: {matchLabels: {app: scratch-db}}
   template:
@@ -81,7 +81,7 @@ kind: StatefulSet
 metadata:
   name: files-db
   namespace: athens-demo
-  annotations: {athens.warewave.io/enabled: "true"}
+  annotations: {athens.warewave.io/enabled: "true", athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"}
 spec:
   serviceName: files-db-hl
   selector: {matchLabels: {app: files-db}}

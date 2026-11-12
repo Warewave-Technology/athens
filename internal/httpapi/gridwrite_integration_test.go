@@ -159,10 +159,9 @@ func TestTargetAccessAnnotations(t *testing.T) {
 			{Group: "system-admins", Level: "write"}, {Group: "developers", Level: "read"},
 		}}
 	})
-	// writers had write through the config rules; the access annotation
-	// replaces them, so they lose the target entirely
+	// writers are not on this target's access list, so they don't see it
 	if r := h.login("w@example.com", "writers").get(dbPath + "/schemas"); r.status != 404 {
-		t.Fatalf("writers via rules: %d", r.status)
+		t.Fatalf("writers not listed: %d", r.status)
 	}
 	// system-admins get rw from the annotation, capped to read by readonly
 	sa := h.login("sa@example.com", "system-admins")

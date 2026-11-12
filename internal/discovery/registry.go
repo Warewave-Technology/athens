@@ -112,11 +112,15 @@ func (r *Registry) SetNamespace(ns string, targets []Target, problems []Problem,
 	r.mu.Unlock()
 
 	// metrics: gauge per (ns, source); count only problems not seen before
-	counts := map[SourceKind]int{SourceAnnotation: 0, SourceCNPG: 0, SourceZalando: 0, SourceGeneric: 0}
+	counts := map[SourceKind]int{SourceAnnotation: 0, SourceCNPG: 0, SourceZalando: 0}
 	for _, t := range targets {
 		counts[t.Source]++
 	}
 	for src, n := range counts {
+		if n == 0 {
+			metrics.DiscoveryTargets.DeleteLabelValues(ns, string(src)) // no series for empty namespaces
+			continue
+		}
 		metrics.DiscoveryTargets.WithLabelValues(ns, string(src)).Set(float64(n))
 	}
 	for _, p := range problems {
@@ -130,6 +134,14 @@ func (r *Registry) SetNamespace(ns string, targets []Target, problems []Problem,
 		}
 	}
 	return events
+}
+
+// Forget drops the status of ns (used for empty namespaces in a
+// cluster-wide watch). Targets are not touched.
+func (r *Registry) Forget(ns string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.status, ns)
 }
 
 // SetNamespaceError records a failure to rebuild ns (targets are kept).

@@ -1,5 +1,11 @@
 # athens configuration. Every scalar can be overridden via env:
 # ATHENS_<PATH_IN_UPPER_SNAKE>, e.g. ATHENS_OIDC_CLIENTSECRET, ATHENS_AUTH_SESSIONKEY
+#
+# Which databases exist and who may use them is not configured here: it comes
+# from annotations on the databases themselves (docs/DATABASES.md):
+#   athens.warewave.io/enabled: "true"
+#   athens.warewave.io/access: "<group>:rw,<group>:ro"
+#   athens.warewave.io/readonly: "true"            (optional)
 
 server:
   listen: ":8080"
@@ -9,13 +15,13 @@ server:
   insecureDev: false                       # allow http baseURL, no HSTS (local dev only)
 
 oidc:
-  issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
+  issuer: "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0"   # your tenant ID
   clientID: "<APP_CLIENT_ID>"
   clientSecret: ""                         # from env ATHENS_OIDC_CLIENTSECRET
   redirectPath: "/auth/callback"
   scopes: ["openid", "profile", "email"]
-  allowedGroups: []                        # optional: Entra group object IDs allowed to log in at all
-  workloadIdentity:                        # M8
+  allowedGroups: []                        # optional: Entra group IDs allowed to sign in at all
+  workloadIdentity:                        # not implemented yet
     enabled: false
     tokenFile: "/var/run/secrets/azure/tokens/azure-identity-token"
 
@@ -25,39 +31,19 @@ auth:
   idleTTL: 1h
 
 authz:
-  readOnly: false                          # global kill switch: everyone gets read
-  annotationAccess: true                   # <prefix>/access annotations replace the rules for their target
-  groupAliases:                            # names usable in access annotations -> Entra group IDs
-    system-admins: "<GROUP_ID_PLATFORM_ADMINS>"
-    developers: "<GROUP_ID_PAYMENTS_DEV>"
-  adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]
-  rules:                                   # effective level = max of matching rules
-    - name: dba-all
-      groups: ["<GROUP_ID_DBA>"]
-      namespaces: ["*"]
-      targets: ["*"]                       # glob on target name
-      databases: ["*"]
-      level: write
-    - name: payments-devs-read
-      groups: ["<GROUP_ID_PAYMENTS_DEV>"]
-      namespaces: ["payments", "payments-staging"]
-      level: read
-    - name: payments-devs-write-staging
-      groups: ["<GROUP_ID_PAYMENTS_DEV>"]
-      namespaces: ["payments-staging"]
-      level: write
+  readOnly: false                          # emergency switch: everyone gets read only
+  adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]   # see the Administration pages (no data access by itself)
+  groupAliases: {}                         # optional names for access annotations, e.g. {dba: "<GROUP_ID_DBA>"}
 
 discovery:
-  namespaces: ["payments", "payments-staging", "orders"]
+  namespaces: []                           # optional: only watch these namespaces (default: the whole cluster)
   resync: 10m
   useFQDN: false
   clusterDomain: "cluster.local"
   defaultSSLMode: "prefer"
   annotationPrefix: "athens.warewave.io"
-  # Only objects annotated athens.warewave.io/enabled: "true" are shown
-  # (ADR-020). Set to false to also find unannotated postgres workloads and
-  # operator clusters automatically.
-  requireAnnotation: true
+  # picks the postgres container of an annotated workload (else the first container)
+  imagePattern: '(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*)$'
   cnpg:
     enabled: true
     useSuperuser: false
@@ -66,9 +52,6 @@ discovery:
     enabled: true
     useSuperuser: false
     secretTemplate: "{username}.{cluster}.credentials.postgresql.acid.zalan.do"
-  generic:
-    enabled: true
-    imagePattern: '(^|/)(postgres|postgresql|postgis/postgis|pgvector/pgvector|timescale/timescaledb[^/]*|bitnami/postgresql[^/]*)$'
 
 limits:
   statementTimeout: 30s

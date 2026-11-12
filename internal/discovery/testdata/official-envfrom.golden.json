@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "inventory",
       "displayName": "inventory",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "inventory",
@@ -34,7 +34,10 @@
             "key": "PASSWORD"
           }
         }
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": null

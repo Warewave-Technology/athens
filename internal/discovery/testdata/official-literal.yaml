@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: pg, uid: uid-pg, labels: {team: core}}
+metadata: {name: pg, uid: uid-pg, labels: {team: core}, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   serviceName: pg
   selector: {matchLabels: {app: pg}}

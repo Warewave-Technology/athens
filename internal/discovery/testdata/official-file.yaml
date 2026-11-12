@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: files, uid: uid-files}
+metadata: {name: files, uid: uid-files, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   serviceName: files
   selector: {matchLabels: {app: files}}

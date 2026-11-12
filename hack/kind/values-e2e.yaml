@@ -12,11 +12,8 @@ config:
     skipIssuerTenantCheck: true
   authz:
     adminGroups: ["e2e-admins"]
-    rules:
-      - {name: writers, groups: ["e2e-writers"], namespaces: ["athens-demo"], level: write}
-      - {name: readers, groups: ["e2e-readers"], namespaces: ["athens-demo"], level: read}
-  discovery:
-    namespaces: ["athens-demo"]
+  # no discovery.namespaces: the whole cluster is watched (ADR-024); access
+  # comes from the fixtures' athens.warewave.io/access annotations (ADR-023)
   log:
     level: debug
 secret:

@@ -1,15 +1,13 @@
-{{- /* One Role + RoleBinding per discovery namespace (ADR-005, ADR-006, ADR-016, ADR-017). */}}
+{{- /*
+Read access for discovery (ADR-005, ADR-016, ADR-017, ADR-024): a ClusterRole
+when config.discovery.namespaces is empty (the whole cluster is watched),
+otherwise one Role + RoleBinding per listed namespace. Secrets and ConfigMaps
+are only readable by name (get), never listed.
+*/}}
 {{- $d := .Values.config.discovery | default dict }}
 {{- $cnpg := (dig "cnpg" "enabled" true $d) }}
 {{- $zalando := (dig "zalando" "enabled" true $d) }}
-{{- range $ns := ($d.namespaces | default list) }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {{ include "athens.fullname" $ }}-discovery
-  namespace: {{ $ns }}
-  labels: {{- include "athens.labels" $ | nindent 4 }}
+{{- define "athens.discoveryRules" }}
 rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets", "deployments"]
@@ -20,16 +18,50 @@ rules:
   - apiGroups: [""]
     resources: ["secrets", "configmaps"]
     verbs: ["get"]
-  {{- if $cnpg }}
+  {{- if .cnpg }}
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
     verbs: ["get", "list", "watch"]
   {{- end }}
-  {{- if $zalando }}
+  {{- if .zalando }}
   - apiGroups: ["acid.zalan.do"]
     resources: ["postgresqls"]
     verbs: ["get", "list", "watch"]
   {{- end }}
+{{- end }}
+{{- $rules := dict "cnpg" $cnpg "zalando" $zalando }}
+{{- if not $d.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "athens.fullname" . }}-discovery
+  labels: {{- include "athens.labels" . | nindent 4 }}
+{{- include "athens.discoveryRules" $rules }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "athens.fullname" . }}-discovery
+  labels: {{- include "athens.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "athens.fullname" . }}-discovery
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "athens.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- range $ns := ($d.namespaces | default list) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "athens.fullname" $ }}-discovery
+  namespace: {{ $ns }}
+  labels: {{- include "athens.labels" $ | nindent 4 }}
+{{- include "athens.discoveryRules" $rules }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

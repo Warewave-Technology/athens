@@ -26,6 +26,7 @@ metadata:
   namespace: athens-demo
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"
     athens.warewave.io/secret: legacy-crm-admin
     athens.warewave.io/readonly-secret: legacy-crm-ro
     athens.warewave.io/database: crm

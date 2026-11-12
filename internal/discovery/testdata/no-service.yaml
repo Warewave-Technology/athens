@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: lonely, uid: uid-lonely}
+metadata: {name: lonely, uid: uid-lonely, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   selector: {matchLabels: {app: lonely}}
   template:

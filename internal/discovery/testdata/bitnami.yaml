@@ -4,6 +4,8 @@ metadata:
   name: my-release-postgresql
   uid: uid-bitnami
   labels: {app.kubernetes.io/name: postgresql, app.kubernetes.io/instance: my-release, app.kubernetes.io/component: primary}
+  annotations:
+    athens.warewave.io/enabled: "true"
 spec:
   serviceName: my-release-postgresql-hl
   selector:

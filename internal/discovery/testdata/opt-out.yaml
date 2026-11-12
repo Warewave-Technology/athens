@@ -24,7 +24,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: also-ignored}
+metadata: {name: also-ignored, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   selector: {matchLabels: {app: also-ignored}}
   template:

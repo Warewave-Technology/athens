@@ -25,19 +25,21 @@ spec:
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     # Kubernetes API (443/6443) and Entra ID (443)
     - ports: [{port: 443, protocol: TCP}, {port: 6443, protocol: TCP}]
-    # Postgres targets in the discovery namespaces
+    # Postgres targets: in the discovery namespaces, or in any namespace when
+    # the whole cluster is watched
     {{- $d := .Values.config.discovery | default dict }}
-    {{- if $d.namespaces }}
     - to:
         - namespaceSelector:
+          {{- if $d.namespaces }}
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
                 values: {{- toYaml $d.namespaces | nindent 18 }}
+          {{- else }} {}
+          {{- end }}
       ports:
         {{- range .Values.networkPolicy.postgresPorts }}
         - {port: {{ . }}, protocol: TCP}
         {{- end }}
-    {{- end }}
     {{- with .Values.networkPolicy.extraEgress }}{{ toYaml . | nindent 4 }}{{ end }}
 {{- end }}

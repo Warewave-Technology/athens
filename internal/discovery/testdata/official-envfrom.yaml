@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: inventory, uid: uid-inv}
+metadata: {name: inventory, uid: uid-inv, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   serviceName: inventory
   selector: {matchLabels: {app: inventory}}

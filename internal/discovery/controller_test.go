@@ -31,9 +31,17 @@ func waitFor(t *testing.T, d time.Duration, cond func() bool) {
 	t.Fatal("condition not met in time")
 }
 
-func pgSts(name string) *appsv1.StatefulSet {
+func pgSts(name string) *appsv1.StatefulSet { return pgStsIn("demo", name, true) }
+
+func pgSvc(name string) *corev1.Service { return pgSvcIn("demo", name) }
+
+func pgStsIn(ns, name string, annotated bool) *appsv1.StatefulSet {
+	ann := map[string]string{}
+	if annotated {
+		ann["athens.warewave.io/enabled"] = "true"
+	}
 	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "demo"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Annotations: ann},
 		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pg", Image: "postgres:16", Env: []corev1.EnvVar{{
@@ -44,9 +52,9 @@ func pgSts(name string) *appsv1.StatefulSet {
 	}
 }
 
-func pgSvc(name string) *corev1.Service {
+func pgSvcIn(ns, name string) *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "demo"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": name}, Ports: []corev1.ServicePort{{Port: 5432}}},
 	}
 }
@@ -115,7 +123,7 @@ func TestControllerLiveUpdates(t *testing.T) {
 	})
 	cl := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster",
-		"metadata": map[string]any{"name": "pay", "namespace": "demo"}, "spec": map[string]any{"instances": int64(1)},
+		"metadata": map[string]any{"name": "pay", "namespace": "demo", "annotations": map[string]any{"athens.warewave.io/enabled": "true"}}, "spec": map[string]any{"instances": int64(1)},
 	}}
 	if _, err := dyn.Resource(cnpgGVR).Namespace("demo").Create(ctx, cl, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
@@ -147,5 +155,63 @@ func TestRegistryDiff(t *testing.T) {
 	}
 	if _, ok := r.Get("x/c"); !ok {
 		t.Fatal("other namespace must be untouched")
+	}
+}
+
+func newFakeController(t *testing.T, namespaces []string, objs ...runtime.Object) (*Controller, *Registry, *fake.Clientset) {
+	t.Helper()
+	client := fake.NewClientset(objs...)
+	fd := &lockedDiscovery{fd: client.Discovery().(*fakediscovery.FakeDiscovery)}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		cnpgGVR: "ClusterList", zalandoGVR: "postgresqlList",
+	})
+	reg := NewRegistry()
+	c := NewController(ControllerOptions{
+		Client: client, Dynamic: dyn, Discovery: fd, Namespaces: namespaces, Resync: time.Minute,
+		Options: testOptions(t), Registry: reg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CRDPoll: time.Hour,
+	})
+	return c, reg, client
+}
+
+// TestControllerClusterWide: without namespaces the whole cluster is watched
+// and only namespaces with targets or problems appear on the status page.
+func TestControllerClusterWide(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c, reg, client := newFakeController(t, nil,
+		pgStsIn("payments", "ledger", true), pgSvcIn("payments", "ledger"),
+		pgStsIn("orders", "orders-db", true), pgSvcIn("orders", "orders-db"),
+		pgStsIn("kube-system", "not-a-target", false), pgSvcIn("kube-system", "not-a-target"))
+	go c.Run(ctx, 5*time.Second)
+	waitFor(t, 5*time.Second, c.Synced)
+	if len(reg.List()) != 2 || len(reg.Status()) != 2 {
+		t.Fatalf("targets %+v status %+v", reg.List(), reg.Status())
+	}
+	// a namespace created later is picked up
+	if _, err := client.CoreV1().Services("late").Create(ctx, pgSvcIn("late", "x"), metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AppsV1().StatefulSets("late").Create(ctx, pgStsIn("late", "x", true), metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Second, func() bool { _, ok := reg.Get("late/x"); return ok })
+	if ps, err := c.PodSpec("late", ObjectRef{Kind: "StatefulSet", Name: "x"}); err != nil || ps.Containers[0].Name != "pg" {
+		t.Fatalf("PodSpec: %v", err)
+	}
+}
+
+func TestControllerNamespaceLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c, reg, _ := newFakeController(t, []string{"payments"},
+		pgStsIn("payments", "ledger", true), pgSvcIn("payments", "ledger"),
+		pgStsIn("orders", "orders-db", true), pgSvcIn("orders", "orders-db"))
+	go c.Run(ctx, 5*time.Second)
+	waitFor(t, 5*time.Second, c.Synced)
+	if l := reg.List(); len(l) != 1 || l[0].ID != "payments/ledger" {
+		t.Fatalf("targets %+v", l)
+	}
+	if _, err := c.PodSpec("orders", ObjectRef{Kind: "StatefulSet", Name: "orders-db"}); err == nil {
+		t.Fatal("PodSpec outside the watched namespaces must fail")
 	}
 }

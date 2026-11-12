@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: db, uid: uid-db-sts}
+metadata: {name: db, uid: uid-db-sts, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   selector: {matchLabels: {app: db, kind: sts}}
   template:
@@ -15,7 +15,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: db, uid: uid-db-deploy}
+metadata: {name: db, uid: uid-db-deploy, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   selector: {matchLabels: {app: db, kind: deploy}}
   template:

@@ -31,7 +31,7 @@ func TestExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Authz.Rules) != 3 || cfg.Limits.StatementTimeout.D() != 30*time.Second {
+	if len(cfg.Authz.AdminGroups) != 1 || len(cfg.Discovery.Namespaces) != 0 || cfg.Limits.StatementTimeout.D() != 30*time.Second {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 	if cfg.TenantID() != "11111111-2222-3333-4444-555555555555" {
@@ -86,12 +86,12 @@ func TestValidation(t *testing.T) {
 		{"workload identity", []string{"ATHENS_OIDC_WORKLOADIDENTITY_ENABLED=true"}, "not implemented"},
 		{"short session key", []string{"ATHENS_AUTH_SESSIONKEY=YWJj"}, "at least 32 bytes"},
 		{"wildcard namespace", []string{"ATHENS_DISCOVERY_NAMESPACES=*"}, "wildcards are not allowed"},
-		{"empty namespaces", []string{"ATHENS_DISCOVERY_NAMESPACES="}, "must not be empty"},
+		{"empty namespaces watch the cluster", []string{"ATHENS_DISCOVERY_NAMESPACES="}, ""},
 		{"maxRows", []string{"ATHENS_LIMITS_MAXROWS=50001"}, "maxRows must be <= 50000"},
 		{"negative", []string{"ATHENS_LIMITS_POOLMAXCONNS=0"}, "must be positive"},
 		{"sslmode", []string{"ATHENS_DISCOVERY_DEFAULTSSLMODE=maybe"}, "defaultSSLMode"},
 		{"bad cidr", []string{"ATHENS_SERVER_TRUSTEDPROXIES=10.0.0.0/33"}, "invalid CIDR"},
-		{"bad regex", []string{"ATHENS_DISCOVERY_GENERIC_IMAGEPATTERN=("}, "imagePattern"},
+		{"bad regex", []string{"ATHENS_DISCOVERY_IMAGEPATTERN=("}, "imagePattern"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -109,15 +109,15 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-func TestRuleValidationAggregates(t *testing.T) {
+func TestRemovedKeysExplained(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "c.yaml")
 	y := `authz:
+  annotationAccess: true
   rules:
-    - name: a
-      level: admin
-    - name: b
-      groups: [g]
-      level: read
+    - {name: a, groups: [g], namespaces: ["*"], level: read}
+discovery:
+  requireAnnotation: true
+  generic: {enabled: true}
 `
 	if err := os.WriteFile(f, []byte(y), 0o600); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,8 @@ func TestRuleValidationAggregates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	for _, want := range []string{"rules[0] (a): groups must not be empty", "rules[0] (a): level must be read or write", "rules[1] (b): at least one of"} {
+	for _, want := range []string{"authz.rules was removed", "access annotation", "authz.annotationAccess was removed",
+		"discovery.requireAnnotation was removed", "discovery.generic was removed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}

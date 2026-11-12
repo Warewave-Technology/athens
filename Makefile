@@ -48,6 +48,7 @@ lint: web/node_modules
 	cd web && pnpm lint && pnpm typecheck
 	helm lint deploy/helm/athens -f deploy/helm/athens/ci-values.yaml
 	helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml | kubeconform -strict -summary -ignore-missing-schemas
+	helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml --set 'config.discovery.namespaces={payments,orders}' | kubeconform -strict -summary -ignore-missing-schemas
 
 image:
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) .

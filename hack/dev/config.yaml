@@ -14,17 +14,8 @@ auth:
   sessionKey: "ZGV2LW9ubHktc2Vzc2lvbi1rZXktMzItYnl0ZXMtbG9uZyE="
 authz:
   adminGroups: ["dev-admins"]
-  rules:
-    - name: dev-write
-      groups: ["dev-writers"]
-      namespaces: ["*"]
-      level: write
-    - name: dev-read
-      groups: ["dev-readers"]
-      namespaces: ["*"]
-      level: read
-discovery:
-  namespaces: ["athens-demo"]
+# Databases and access come from annotations on the kind fixtures
+# (athens.warewave.io/enabled, athens.warewave.io/access); the whole cluster is watched.
 store:
   path: "./athens-dev.db"
 log:

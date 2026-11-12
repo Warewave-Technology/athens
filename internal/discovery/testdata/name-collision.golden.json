@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "db-deploy",
       "displayName": "db-deploy",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "Deployment",
         "name": "db",
@@ -28,6 +28,7 @@
         }
       },
       "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target",
         "name \"db\" is used by several targets; renamed to \"db-deploy\""
       ]
     },
@@ -36,7 +37,7 @@
       "namespace": "demo",
       "name": "db-sts",
       "displayName": "db-sts",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "db",
@@ -59,6 +60,7 @@
         }
       },
       "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target",
         "name \"db\" is used by several targets; renamed to \"db-sts\""
       ]
     }

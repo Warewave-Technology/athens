@@ -1,6 +1,6 @@
 apiVersion: acid.zalan.do/v1
 kind: postgresql
-metadata: {name: acid-minimal, uid: uid-zalando, labels: {team: acid}}
+metadata: {name: acid-minimal, uid: uid-zalando, labels: {team: acid}, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   teamId: acid
   numberOfInstances: 2
@@ -14,7 +14,7 @@ spec:
 ---
 apiVersion: acid.zalan.do/v1
 kind: postgresql
-metadata: {name: acid-nousers, uid: uid-zalando-2}
+metadata: {name: acid-nousers, uid: uid-zalando-2, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   teamId: acid
   numberOfInstances: 1

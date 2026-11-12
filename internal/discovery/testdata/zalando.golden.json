@@ -36,7 +36,10 @@
       },
       "labels": {
         "team": "acid"
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": [

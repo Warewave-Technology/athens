@@ -36,7 +36,8 @@ helm upgrade --install pg oci://registry-1.docker.io/bitnamicharts/postgresql -n
   --set auth.username=app --set auth.password=bitnami-app-pw-e2e --set auth.postgresPassword=bitnami-admin-pw-e2e \
   --set auth.database=appdb --set auth.usePasswordFiles=true --set primary.persistence.size=1Gi \
   --wait --timeout 10m >/dev/null
-kubectl -n athens-demo annotate --overwrite statefulset pg-postgresql athens.warewave.io/enabled=true >/dev/null
+kubectl -n athens-demo annotate --overwrite statefulset pg-postgresql athens.warewave.io/enabled=true \
+  athens.warewave.io/access=dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro >/dev/null
 
 log "operator clusters"
 for i in $(seq 1 30); do kubectl apply -f operators/ >/dev/null 2>&1 && break; sleep 5; done

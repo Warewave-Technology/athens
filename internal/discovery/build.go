@@ -19,29 +19,26 @@ import (
 	"github.com/Warewave-Technology/athens/internal/config"
 )
 
-// Options are the discovery settings Build needs.
+// Options are the discovery settings Build needs. Only objects annotated
+// <prefix>/enabled: "true" become targets (ADR-020, ADR-024).
 type Options struct {
 	AnnotationPrefix string
-	// RequireAnnotation: only objects with <prefix>/enabled: "true" become
-	// targets (ADR-020).
-	RequireAnnotation bool
-	ClusterDomain     string
-	UseFQDN           bool
-	DefaultSSLMode    string
-	CNPG              config.CNPG
-	Zalando           config.Zalando
-	Generic           config.Generic
-	imageRE           *regexp.Regexp
+	ClusterDomain    string
+	UseFQDN          bool
+	DefaultSSLMode   string
+	CNPG             config.CNPG
+	Zalando          config.Zalando
+	imageRE          *regexp.Regexp // picks the postgres container of a workload
 }
 
 func OptionsFromConfig(c config.Discovery) (Options, error) {
-	re, err := regexp.Compile(c.Generic.ImagePattern)
+	re, err := regexp.Compile(c.ImagePattern)
 	if err != nil {
 		return Options{}, err
 	}
 	return Options{
-		AnnotationPrefix: c.AnnotationPrefix, RequireAnnotation: c.RequireAnnotation, ClusterDomain: c.ClusterDomain, UseFQDN: c.UseFQDN,
-		DefaultSSLMode: c.DefaultSSLMode, CNPG: c.CNPG, Zalando: c.Zalando, Generic: c.Generic, imageRE: re,
+		AnnotationPrefix: c.AnnotationPrefix, ClusterDomain: c.ClusterDomain, UseFQDN: c.UseFQDN,
+		DefaultSSLMode: c.DefaultSSLMode, CNPG: c.CNPG, Zalando: c.Zalando, imageRE: re,
 	}, nil
 }
 
@@ -163,22 +160,6 @@ func imageRepo(image string) string {
 	return image
 }
 
-func operatorOwned(m metav1.ObjectMeta) bool {
-	if _, ok := m.Labels["cnpg.io/cluster"]; ok {
-		return true
-	}
-	if m.Labels["application"] == "spilo" {
-		return true
-	}
-	for _, o := range m.OwnerReferences {
-		group, _, _ := strings.Cut(o.APIVersion, "/")
-		if (o.Kind == "Cluster" && group == "postgresql.cnpg.io") || (o.Kind == "postgresql" && group == "acid.zalan.do") {
-			return true
-		}
-	}
-	return false
-}
-
 func (b *builder) pgContainer(spec *corev1.PodSpec) *corev1.Container {
 	for i := range spec.Containers {
 		if b.opt.imageRE != nil && b.opt.imageRE.MatchString(imageRepo(spec.Containers[i].Image)) {
@@ -204,37 +185,24 @@ func containerPort(c *corev1.Container) corev1.ContainerPort {
 }
 
 func (b *builder) fromWorkload(w workload) {
-	enabled, _ := b.ann(w.meta, "enabled")
-	if enabled == "false" {
+	if enabled, _ := b.ann(w.meta, "enabled"); enabled != "true" {
 		return
-	}
-	annotated := enabled == "true"
-	if !annotated {
-		if b.opt.RequireAnnotation || !b.opt.Generic.Enabled || operatorOwned(w.meta) || operatorOwned(w.tmpl.ObjectMeta) {
-			return
-		}
 	}
 	c := b.pgContainer(&w.tmpl.Spec)
 	if c == nil {
-		if !annotated {
-			return
-		}
 		if len(w.tmpl.Spec.Containers) == 0 {
 			b.problem(w.ref(), SourceAnnotation, "no_container", "workload has no containers")
 			return
 		}
 		c = &w.tmpl.Spec.Containers[0]
 	}
-	src := SourceGeneric
-	if annotated {
-		src = SourceAnnotation
-	}
+	src := SourceAnnotation
 	t := Target{Namespace: b.ns, Name: w.meta.Name, Source: src, Owner: w.ref(), Labels: w.meta.Labels}
 
 	// service + port
 	cport := containerPort(c)
 	svcName, _ := b.ann(w.meta, "service")
-	if annotated && svcName != "" {
+	if svcName != "" {
 		svc := b.service(svcName)
 		if svc == nil {
 			b.problem(w.ref(), src, "service_not_found", "annotated service %q does not exist", svcName)
@@ -261,18 +229,16 @@ func (b *builder) fromWorkload(w workload) {
 	if b.optedOut[t.Service] {
 		return
 	}
-	if annotated {
-		if p, ok := b.ann(w.meta, "port"); ok && p != "" {
-			if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
-				t.Port = n
-			} else {
-				t.Warnings = append(t.Warnings, fmt.Sprintf("invalid port annotation %q ignored", p))
-			}
+	if p, ok := b.ann(w.meta, "port"); ok && p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+			t.Port = n
+		} else {
+			t.Warnings = append(t.Warnings, fmt.Sprintf("invalid port annotation %q ignored", p))
 		}
 	}
 
 	// credentials
-	if secret, ok := b.ann(w.meta, "secret"); annotated && ok && secret != "" {
+	if secret, ok := b.ann(w.meta, "secret"); ok && secret != "" {
 		b.secretCreds(&t, w.meta, secret)
 	} else {
 		r := resolveEnv(&w.tmpl.Spec, c, w.ref())
@@ -295,13 +261,7 @@ func (b *builder) fromWorkload(w workload) {
 			t.DefaultDBFrom = &u
 		}
 	}
-	if annotated {
-		b.applyCommonAnnotations(&t, w.meta)
-	} else {
-		t.SSLMode = b.opt.DefaultSSLMode
-		t.DisplayName = t.Name
-		b.applyAccess(&t, w.meta) // restrictions apply in automatic mode too
-	}
+	b.applyCommonAnnotations(&t, w.meta)
 	b.cands = append(b.cands, candidate{t: t, kindShort: w.kindShort, kindOrder: w.order})
 }
 
@@ -461,9 +421,10 @@ func (b *builder) applyCommonAnnotations(t *Target, m metav1.ObjectMeta) {
 	b.applyAccess(t, m)
 }
 
-// applyAccess reads the readonly and access annotations (ADR-022). Both fail
-// closed: an unreadable readonly value means read-only, and invalid access
-// entries are dropped rather than widened.
+// applyAccess reads the readonly and access annotations (ADR-022, ADR-023).
+// Both fail closed: an unreadable readonly value means read-only, invalid
+// access entries are dropped, and without an access annotation nobody can use
+// the target.
 func (b *builder) applyAccess(t *Target, m metav1.ObjectMeta) {
 	if v, ok := b.ann(m, "readonly"); ok {
 		switch strings.ToLower(v) {
@@ -477,6 +438,7 @@ func (b *builder) applyAccess(t *Target, m metav1.ObjectMeta) {
 	}
 	v, ok := b.ann(m, "access")
 	if !ok {
+		t.Warnings = append(t.Warnings, fmt.Sprintf("no %s/access annotation; nobody can use this target", b.opt.AnnotationPrefix))
 		return
 	}
 	p, warnings := ParseAccess(v)
@@ -549,11 +511,10 @@ func (b *builder) fromAnnotatedService(s *corev1.Service) {
 
 // ---- CloudNativePG ----
 
-// optedIn applies the enabled annotation to an operator cluster: "false"
-// always hides it, and with RequireAnnotation only "true" shows it.
+// optedIn reports the enabled annotation of an operator cluster.
 func (b *builder) optedIn(meta metav1.ObjectMeta) bool {
 	v, _ := b.ann(meta, "enabled")
-	return v == "true" || (v != "false" && !b.opt.RequireAnnotation)
+	return v == "true"
 }
 
 func (b *builder) fromCNPG(u *unstructured.Unstructured) {

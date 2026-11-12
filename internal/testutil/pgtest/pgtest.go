@@ -103,6 +103,7 @@ func (in *Instance) Target(name string) (discovery.Target, *fake.Clientset) {
 	return discovery.Target{
 		ID: Namespace + "/" + name, Namespace: Namespace, Name: name, DisplayName: name, Source: discovery.SourceAnnotation,
 		Host: in.Host, Port: in.Port, DefaultDB: "app", SSLMode: "disable", RW: ref(name + "-rw"), RO: &ro,
+		Access: &discovery.AccessPolicy{Grants: []discovery.AccessGrant{{Group: "readers", Level: "read"}, {Group: "writers", Level: "write"}}},
 	}, client
 }
 

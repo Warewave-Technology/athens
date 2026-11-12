@@ -5,7 +5,7 @@
       "namespace": "demo",
       "name": "solo",
       "displayName": "solo",
-      "source": "generic",
+      "source": "annotation",
       "owner": {
         "kind": "StatefulSet",
         "name": "solo",
@@ -28,7 +28,8 @@
         }
       },
       "warnings": [
-        "only headless service \"solo-hl\" matches; assuming pod solo-0 is the primary"
+        "only headless service \"solo-hl\" matches; assuming pod solo-0 is the primary",
+        "no athens.warewave.io/access annotation; nobody can use this target"
       ]
     }
   ],

@@ -50,7 +50,10 @@
       },
       "labels": {
         "team": "payments"
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     },
     {
       "id": "demo/reports",
@@ -84,7 +87,10 @@
             "key": "password"
           }
         }
-      }
+      },
+      "warnings": [
+        "no athens.warewave.io/access annotation; nobody can use this target"
+      ]
     }
   ],
   "problems": null

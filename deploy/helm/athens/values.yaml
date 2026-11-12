@@ -14,14 +14,16 @@ config:
     issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
     clientID: "<APP_CLIENT_ID>"
     allowedGroups: []
+  # Who may use a database comes from its athens.warewave.io/access annotation,
+  # not from this file (docs/ACCESS-CONTROL.md).
   authz:
     readOnly: false
     adminGroups: []
-    rules: []
-    annotationAccess: true   # athens.warewave.io/access annotations replace the rules for their target
-    groupAliases: {}         # name -> Entra group ID, for access annotations
+    groupAliases: {}         # optional: name -> Entra group ID, for access annotations
   discovery:
-    namespaces: []   # every namespace listed gets a Role + RoleBinding
+    # Empty: watch the whole cluster (ClusterRole). List namespaces to limit
+    # athens to them (a Role + RoleBinding in each).
+    namespaces: []
     cnpg:
       enabled: true
     zalando:

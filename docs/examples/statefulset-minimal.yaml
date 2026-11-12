@@ -1,4 +1,5 @@
-# The smallest opt-in: one annotation on an official postgres StatefulSet.
+# The smallest setup: two annotations on an official postgres StatefulSet,
+# one to show it in athens and one listing the groups that may use it.
 # athens finds the Service by its selector and reads the user, password and
 # database from the container env (secretKeyRef). Nothing else is needed.
 apiVersion: v1
@@ -25,6 +26,7 @@ metadata:
   name: orders-db
   annotations:
     athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "orders-team:rw, analysts:ro"
 spec:
   serviceName: orders-db
   selector:

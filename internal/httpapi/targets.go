@@ -69,7 +69,7 @@ func (s *Server) mapDBError(err error, sql string) error {
 func (s *Server) target(r *http.Request) (discovery.Target, error) {
 	u := reqctx.UserFrom(r.Context())
 	t, ok := s.Registry.Get(r.PathValue("ns") + "/" + r.PathValue("name"))
-	if !ok || s.Authz.TargetLevel(u.Groups, t) == authz.None {
+	if !ok || s.Authz.Level(u.Groups, t) == authz.None {
 		return discovery.Target{}, httpx.ErrNotFound
 	}
 	return t, nil
@@ -82,7 +82,7 @@ func (s *Server) targetDB(r *http.Request) (discovery.Target, string, authz.Leve
 		return t, "", authz.None, err
 	}
 	db := r.PathValue("db")
-	lvl := s.Authz.Effective(reqctx.UserFrom(r.Context()).Groups, t, db)
+	lvl := s.Authz.Level(reqctx.UserFrom(r.Context()).Groups, t)
 	if db == "" || lvl == authz.None {
 		return t, "", authz.None, httpx.ErrNotFound
 	}
@@ -110,7 +110,7 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 	admin := s.Authz.IsAdmin(u.Groups)
 	out := []targetJSON{}
 	for _, t := range s.Registry.List() {
-		lvl := s.Authz.TargetLevel(u.Groups, t)
+		lvl := s.Authz.Level(u.Groups, t)
 		if lvl == authz.None {
 			continue
 		}
@@ -140,7 +140,7 @@ func (s *Server) listDatabases(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	u := reqctx.UserFrom(r.Context())
-	lvl := s.Authz.TargetLevel(u.Groups, t)
+	lvl := s.Authz.Level(u.Groups, t)
 	var dbs []catalog.Database
 	err = s.Pools.Run(r.Context(), pgconn.Request{Target: t, Level: lvl, Email: u.Email, ReadOnly: true},
 		func(ctx context.Context, tx pgx.Tx) error {
@@ -153,9 +153,7 @@ func (s *Server) listDatabases(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := []databaseJSON{}
 	for _, d := range dbs {
-		if l := s.Authz.Effective(u.Groups, t, d.Name); l != authz.None {
-			out = append(out, databaseJSON{Name: d.Name, Level: l.String(), SizeBytes: d.SizeBytes})
-		}
+		out = append(out, databaseJSON{Name: d.Name, Level: lvl.String(), SizeBytes: d.SizeBytes})
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"databases": out})
 	return nil

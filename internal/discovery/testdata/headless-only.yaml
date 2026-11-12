@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
-metadata: {name: solo, uid: uid-solo}
+metadata: {name: solo, uid: uid-solo, annotations: {athens.warewave.io/enabled: "true"}}
 spec:
   serviceName: solo-hl
   selector: {matchLabels: {app: solo}}

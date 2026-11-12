@@ -68,9 +68,6 @@ type adminDiscoveryResponse struct {
 	Targets    []discovery.Target          `json:"targets"`
 	Namespaces []discovery.NamespaceStatus `json:"namespaces"`
 	Synced     bool                        `json:"synced"`
-	// AnnotationAccess mirrors authz.annotationAccess: whether access
-	// annotations replace the config rules.
-	AnnotationAccess bool `json:"annotationAccess"`
 }
 
 func (s *Server) adminDiscovery(w http.ResponseWriter, r *http.Request) error {
@@ -80,7 +77,6 @@ func (s *Server) adminDiscovery(w http.ResponseWriter, r *http.Request) error {
 	s.auditAdminView(r, "discovery", nil)
 	httpx.WriteJSON(w, http.StatusOK, adminDiscoveryResponse{
 		Targets: s.Registry.List(), Namespaces: s.Registry.Status(), Synced: s.Ready == nil || s.Ready(),
-		AnnotationAccess: s.Config.Authz.AnnotationAccess,
 	})
 	return nil
 }
