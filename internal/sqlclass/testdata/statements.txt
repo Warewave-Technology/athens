@@ -1,0 +1,132 @@
+# <class> <destructive: y|n> | <sql>   (\n in sql = newline)
+read n | select 1
+read n | SELECT * FROM orders WHERE id = 1;
+read n | select * from orders o join customers c on c.id = o.customer_id where c.email like '%x%'
+read n | -- leading comment\nselect now()
+read n | /* block */ select 'delete from orders' as s
+read n | select 'drop table x; delete from y'
+read n | select $$ update t set a = 1 $$
+read n | values (1, 'a'), (2, 'b')
+read n | table orders
+read n | show search_path
+read n | show all
+read n | explain select * from orders
+read n | explain (costs off, format json) select * from orders
+read n | explain delete from orders
+read n | explain (analyze false) delete from orders
+read n | with recent as (select * from orders where created_at > now() - interval '1 day') select count(*) from recent
+read n | with recursive t(n) as (values (1) union all select n + 1 from t where n < 10) select sum(n) from t
+read n | select * from (select 1) s union select 2 except select 3
+read n | select count(*) filter (where status = 'paid') from orders
+read n | select jsonb_path_query(meta, '$.a') from orders
+read n | select pg_sleep(1)
+read n | select current_setting('statement_timeout')
+read n | select pg_advisory_unlock(1)
+read n | select pg_size_pretty(pg_database_size(current_database()))
+dml n | select * from orders for update skip locked limit 0
+read n | explain analyze select 1
+read n | explain (analyze, buffers) select * from orders
+read n | select "delete" from "update"
+read n | select e'\\x' || 'drop'
+read n | select * from orders where id in (select order_id from refunds)
+read n | select lower(email) from customers order by 1 limit 10 offset 5
+dml n | select * from orders for update
+dml n | select * from orders for share
+dml n | select * from orders o, customers c for no key update of o
+dml n | select * into backup from orders
+dml n | insert into orders(id) values (1)
+dml n | insert into orders select * from staging on conflict (id) do nothing
+dml n | insert into orders(id) values (1) returning *
+dml n | update orders set status = 'paid' where id = 1
+dml n | update orders o set status = 'x' from customers c where c.id = o.customer_id
+dml n | delete from orders where id = 1
+dml n | delete from orders where id in (select id from old)
+dml n | delete from orders where current of c
+dml n | merge into orders t using staging s on t.id = s.id when matched then update set status = s.status
+dml n | with d as (delete from orders where id = 1 returning *) select * from d
+dml n | with u as (update orders set status = 'x' where id = 2 returning id) select count(*) from u
+dml n | with i as (insert into log values (1) returning *) select 1
+dml y | with d as (delete from orders returning *) select count(*) from d
+dml n | select nextval('orders_id_seq')
+dml n | select setval('orders_id_seq', 10)
+dml n | select pg_terminate_backend(123)
+dml n | select pg_catalog.pg_cancel_backend(pid) from pg_stat_activity
+dml n | select pg_reload_conf()
+dml n | select set_config('role', 'postgres', false)
+dml n | select pg_advisory_lock(1)
+dml n | select pg_try_advisory_xact_lock(1)
+dml n | select lo_export(123, '/tmp/x')
+dml n | select * from dblink('host=x', 'select 1') as t(a int)
+dml n | select pg_notify('c', 'p')
+dml n | select pg_stat_reset()
+dml n | select * from orders where id = (select nextval('s'))
+dml n | explain analyze delete from orders where id = 1
+dml y | explain analyze delete from orders
+dml n | copy orders from '/tmp/orders.csv'
+dml y | delete from orders
+dml y | delete from orders where true
+dml y | delete from orders where 1 = 1
+dml y | update orders set status = 'x'
+dml y | update orders set status = 'x' where 'a' = 'a'
+dml y | DELETE FROM "Orders";
+ddl n | create table t (id int primary key)
+ddl n | create table t2 as select * from orders
+ddl n | create index on orders(status)
+ddl n | create view v as select 1
+ddl n | create or replace function f() returns int language sql as $$ select 1 $$
+ddl n | alter table orders add column note text
+ddl n | alter table orders rename column note to notes
+ddl n | alter table orders alter column status set default 'new'
+ddl n | comment on table orders is 'x'
+ddl n | grant select on orders to reader
+ddl n | revoke select on orders from reader
+ddl n | refresh materialized view mv
+ddl n | cluster orders using orders_pkey
+ddl n | reindex table orders
+ddl n | create schema s
+ddl n | call do_something()
+ddl n | copy orders to '/tmp/out.csv'
+ddl n | create extension if not exists pgcrypto
+ddl n | analyze orders
+ddl y | drop table orders
+ddl y | drop table if exists a, b cascade
+ddl y | drop index orders_status_idx
+ddl y | drop schema s cascade
+ddl y | drop function f()
+ddl y | drop view v
+ddl y | truncate orders
+ddl y | truncate table a, b restart identity
+ddl y | alter table orders drop column note
+ddl y | alter table orders drop constraint orders_pkey
+ddl y | alter table orders add column x int, drop column y
+ddl y | drop role r
+ddl y | do $$ begin perform 1; end $$
+session n | set statement_timeout = 0
+session n | set local role postgres
+session n | reset all
+session n | begin
+session n | commit
+session n | rollback
+session n | savepoint a
+session n | start transaction read write
+session n | listen ch
+session n | notify ch
+session n | prepare p as select 1
+session n | execute p
+session n | deallocate all
+session n | discard all
+session n | declare c cursor for select 1
+session n | fetch 10 from c
+session n | lock table orders in exclusive mode
+session n | load 'x'
+session n | copy orders to stdout
+session n | copy orders from stdin
+nontx n | vacuum orders
+nontx n | vacuum full analyze
+nontx n | create database x
+nontx y | drop database x
+nontx n | alter system set work_mem = '1GB'
+nontx n | create index concurrently i on orders(status)
+nontx y | drop index concurrently orders_status_idx
+nontx n | reindex (concurrently) table orders
+nontx n | create tablespace ts location '/x'
