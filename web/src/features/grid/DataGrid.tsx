@@ -162,8 +162,15 @@ export function DataGrid(p: DataGridProps) {
 
   return (
     <div className="grid-scroll" ref={scrollRef} tabIndex={0} onKeyDown={onKey}>
-      <div style={{ width: totalW, height: rowV.getTotalSize() + HEAD_H, position: "relative" }}>
-        <div className="grid-header" style={{ width: totalW, height: HEAD_H }}>
+      {/* rows and header span at least the visible width, so narrow tables don't look cut off */}
+      <div
+        style={{
+          width: `max(${totalW}px, 100%)`,
+          height: rowV.getTotalSize() + HEAD_H,
+          position: "relative",
+        }}
+      >
+        <div className="grid-header" style={{ width: "100%", height: HEAD_H }}>
           <div className="grid-gutter hdr" style={{ width: gutter }}>
             {p.selectable && (
               <input
@@ -224,7 +231,7 @@ export function DataGrid(p: DataGridProps) {
                 (p.selectedRow === r ? " selected" : "") +
                 (p.rowClassName ? " " + p.rowClassName(r) : "")
               }
-              style={{ top: HEAD_H + vr.start, height: ROW_H, width: totalW }}
+              style={{ top: HEAD_H + vr.start, height: ROW_H, width: "100%" }}
             >
               <div className="grid-gutter" style={{ width: gutter }}>
                 {p.selectable && (

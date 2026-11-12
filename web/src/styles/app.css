@@ -1075,14 +1075,19 @@ kbd {
   color: var(--text-3);
 }
 
+/* the frame owns border, radius and horizontal scroll; the table always
+   spans the full frame width */
+.table-frame {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
 table.simple {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--surface);
 }
 
 table.simple th,
@@ -1379,7 +1384,6 @@ table.simple td.wrap {
 }
 
 .admin-section {
-  max-width: 1280px;
   padding: 18px 20px 40px;
 }
 
@@ -1446,13 +1450,6 @@ table.simple td.audit-sql pre {
   }
 }
 
-/* wide admin tables scroll inside their rounded frame */
-.admin-section table.simple {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
 .confirm-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1482,4 +1479,19 @@ table.simple td.audit-sql pre {
   border-radius: 12px;
   background: var(--laurel-soft);
   color: var(--laurel-text);
+}
+
+.cell-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+table.simple td.warn-cell {
+  min-width: 220px;
+  white-space: normal;
+}
+
+table.simple td > .mono {
+  white-space: nowrap;
 }

@@ -185,7 +185,45 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		}
 		return err
 	}
-	return m.runOn(ctx, conn, req, fn)
+	err = m.runOn(ctx, conn, req, fn)
+	if errors.Is(err, errStaleConn) {
+		// The pooled connections died underneath us (server or network
+		// restart). Nothing reached the server, so drop the pool's idle
+		// connections and try once more on a fresh one.
+		m.log().Info("stale pooled connection, reconnecting", "target", req.Target.ID)
+		m.resetPool(key)
+		if conn, err = m.acquire(ctx, req.Target, key); err != nil {
+			return err
+		}
+		err = m.runOn(ctx, conn, req, fn)
+	}
+	if errors.Is(err, errStaleConn) {
+		return &ErrUnavailable{Cause: err}
+	}
+	return err
+}
+
+// staleBegin reports whether BEGIN failed because the connection itself is
+// gone. Retrying is safe: a failed BEGIN leaves nothing behind on the server.
+func staleBegin(conn *pgxpool.Conn, err error) bool {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		// admin_shutdown, crash_shutdown, cannot_connect_now
+		return pe.Code == "57P01" || pe.Code == "57P02" || pe.Code == "57P03"
+	}
+	return pgconn.SafeToRetry(err) || conn.Conn().IsClosed()
+}
+
+// errStaleConn marks a connection that failed before the transaction began.
+var errStaleConn = errors.New("stale pooled connection")
+
+func (m *Manager) resetPool(key Key) {
+	m.mu.Lock()
+	p, ok := m.pools[key]
+	m.mu.Unlock()
+	if ok {
+		p.p.Reset()
+	}
 }
 
 func (m *Manager) log() *slog.Logger { return m.opt.Log }
@@ -215,6 +253,10 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, fn
 	}
 	tx, err := conn.BeginTx(ctx, opts)
 	if err != nil {
+		if ctx.Err() == nil && staleBegin(conn, err) {
+			_ = conn.Conn().Close(context.WithoutCancel(ctx)) // never return it to the pool
+			return errStaleConn
+		}
 		return classify(ctx, err)
 	}
 	defer func() {

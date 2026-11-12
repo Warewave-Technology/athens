@@ -111,59 +111,61 @@ function AuditView() {
         </button>
       </form>
       {q.isError && <div className="error-banner">{q.error.message}</div>}
-      <table className="simple admin-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Event</th>
-            <th>User</th>
-            <th>Target / DB</th>
-            <th>Class</th>
-            <th>Result</th>
-            <th>Rows</th>
-            <th>ms</th>
-            <th>SQL / details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((a) => (
-            <tr
-              key={a.id}
-              onClick={() => setOpen(open === a.id ? null : a.id)}
-              className="clickable"
-            >
-              <td className="nowrap">{new Date(a.ts).toLocaleString()}</td>
-              <td className="nowrap">{a.event}</td>
-              <td title={a.clientIp}>{a.email}</td>
-              <td className="nowrap">
-                {a.targetId}
-                {a.database ? " / " + a.database : ""}
-              </td>
-              <td>
-                {a.statementClass}
-                {a.destructive && <span className="badge env-production">destructive</span>}
-              </td>
-              <td className={a.result === "ok" ? "" : "error-text"}>
-                {a.result}
-                {a.errorCode ? " " + a.errorCode : ""}
-              </td>
-              <td>{a.rowsAffected}</td>
-              <td>{a.durationMs}</td>
-              <td className="mono audit-sql">
-                {open === a.id ? (
-                  <pre>
-                    {a.sql}
-                    {a.details ? "\n" + a.details : ""}
-                    {a.object ? "\n" + a.object : ""}
-                  </pre>
-                ) : (
-                  oneLine(a.sql ?? a.details ?? "")
-                )}
-              </td>
+      <div className="table-frame">
+        <table className="simple admin-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Event</th>
+              <th>User</th>
+              <th>Target / DB</th>
+              <th>Class</th>
+              <th>Result</th>
+              <th>Rows</th>
+              <th>ms</th>
+              <th>SQL / details</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((a) => (
+              <tr
+                key={a.id}
+                onClick={() => setOpen(open === a.id ? null : a.id)}
+                className="clickable"
+              >
+                <td className="nowrap">{new Date(a.ts).toLocaleString()}</td>
+                <td className="nowrap">{a.event}</td>
+                <td title={a.clientIp}>{a.email}</td>
+                <td className="nowrap">
+                  {a.targetId}
+                  {a.database ? " / " + a.database : ""}
+                </td>
+                <td>
+                  {a.statementClass}
+                  {a.destructive && <span className="badge env-production">destructive</span>}
+                </td>
+                <td className={a.result === "ok" ? "" : "error-text"}>
+                  {a.result}
+                  {a.errorCode ? " " + a.errorCode : ""}
+                </td>
+                <td>{a.rowsAffected}</td>
+                <td>{a.durationMs}</td>
+                <td className="mono audit-sql">
+                  {open === a.id ? (
+                    <pre>
+                      {a.sql}
+                      {a.details ? "\n" + a.details : ""}
+                      {a.object ? "\n" + a.object : ""}
+                    </pre>
+                  ) : (
+                    oneLine(a.sql ?? a.details ?? "")
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {q.isPending && <div className="pad muted">Loading…</div>}
       {q.hasNextPage && (
         <button disabled={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
@@ -203,6 +205,13 @@ interface DiscoveryResp {
   }[];
 }
 
+const sourceLabel: Record<string, string> = {
+  annotation: "Annotation",
+  cnpg: "CloudNativePG",
+  zalando: "Zalando operator",
+  generic: "Image detection",
+};
+
 function DiscoveryView() {
   const q = useQuery({
     queryKey: ["admin-discovery"],
@@ -221,78 +230,83 @@ function DiscoveryView() {
         )}
       </p>
       <h3>Namespaces</h3>
-      <table className="simple admin-table">
-        <thead>
-          <tr>
-            <th>Namespace</th>
-            <th>Last rebuild</th>
-            <th>Problems</th>
-          </tr>
-        </thead>
-        <tbody>
-          {q.data.namespaces.map((n) => (
-            <tr key={n.namespace}>
-              <td>{n.namespace}</td>
-              <td>{new Date(n.lastRebuild).toLocaleString()}</td>
-              <td>
-                {n.error && <div className="error-text">{n.error}</div>}
-                {(n.problems ?? []).map((p, i) => (
-                  <div key={i}>
-                    <span className="mono">
-                      {p.object.kind}/{p.object.name}
-                    </span>{" "}
-                    <span className="badge">{p.reason}</span>{" "}
-                    <span className="muted">{p.message}</span>
-                  </div>
-                ))}
-                {!n.error && !n.problems?.length && <span className="muted">none</span>}
-              </td>
+      <div className="table-frame">
+        <table className="simple admin-table">
+          <thead>
+            <tr>
+              <th>Namespace</th>
+              <th>Last rebuild</th>
+              <th>Problems</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {q.data.namespaces.map((n) => (
+              <tr key={n.namespace}>
+                <td>{n.namespace}</td>
+                <td>{new Date(n.lastRebuild).toLocaleString()}</td>
+                <td>
+                  {n.error && <div className="error-text">{n.error}</div>}
+                  {(n.problems ?? []).map((p, i) => (
+                    <div key={i}>
+                      <span className="mono">
+                        {p.object.kind}/{p.object.name}
+                      </span>{" "}
+                      <span className="badge">{p.reason}</span>{" "}
+                      <span className="muted">{p.message}</span>
+                    </div>
+                  ))}
+                  {!n.error && !n.problems?.length && <span className="muted">none</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <h3>Targets</h3>
-      <table className="simple admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Source</th>
-            <th>Owner</th>
-            <th>Endpoint</th>
-            <th>TLS</th>
-            <th>Env</th>
-            <th>RO cred</th>
-            <th>Warnings</th>
-          </tr>
-        </thead>
-        <tbody>
-          {q.data.targets.map((t) => (
-            <tr key={t.id}>
-              <td className="mono">{t.id}</td>
-              <td>{t.source}</td>
-              <td className="mono">
-                {t.owner.kind}/{t.owner.name}
-              </td>
-              <td className="mono">
-                {t.host}:{t.port}
-                {t.defaultDB ? "/" + t.defaultDB : ""}
-              </td>
-              <td>{t.sslMode}</td>
-              <td>
-                <EnvBadge env={t.environment ?? ""} />
-              </td>
-              <td>{t.ro ? "yes" : ""}</td>
-              <td>
-                {(t.warnings ?? []).map((w) => (
-                  <div key={w} className="warn-text">
-                    {w}
-                  </div>
-                ))}
-              </td>
+      <div className="table-frame">
+        <table className="simple admin-table">
+          <thead>
+            <tr>
+              <th>Target</th>
+              <th>Found by</th>
+              <th>Endpoint</th>
+              <th>TLS</th>
+              <th>Environment</th>
+              <th>Read-only role</th>
+              <th>Warnings</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {q.data.targets.map((t) => (
+              <tr key={t.id}>
+                <td>
+                  <div className="mono">{t.id}</div>
+                  <div className="cell-sub">
+                    {t.owner.kind}/{t.owner.name}
+                  </div>
+                </td>
+                <td>{sourceLabel[t.source] ?? t.source}</td>
+                <td className="mono">
+                  {t.host}:{t.port}
+                  {t.defaultDB ? "/" + t.defaultDB : ""}
+                </td>
+                <td>{t.sslMode}</td>
+                <td>
+                  <EnvBadge env={t.environment ?? ""} />
+                </td>
+                <td>{t.ro ? "Yes" : <span className="muted">No</span>}</td>
+                <td className="warn-cell">
+                  {(t.warnings ?? []).map((w) => (
+                    <div key={w} className="warn-text">
+                      {w}
+                    </div>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -319,45 +333,47 @@ function PoolsView() {
   if (!q.data) return <div className="pad muted">{q.isError ? q.error.message : "Loading…"}</div>;
   return (
     <div className="admin-section">
-      <table className="simple admin-table">
-        <thead>
-          <tr>
-            <th>Target</th>
-            <th>Database</th>
-            <th>Credential</th>
-            <th>Total</th>
-            <th>Acquired</th>
-            <th>Idle</th>
-            <th>Created</th>
-            <th>Last used</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {q.data.pools.map((p) => (
-            <tr key={p.targetId + p.database + p.kind}>
-              <td className="mono">{p.targetId}</td>
-              <td>{p.database || <span className="muted">default</span>}</td>
-              <td>{p.kind}</td>
-              <td>{p.total}</td>
-              <td>{p.acquired}</td>
-              <td>{p.idle}</td>
-              <td>{new Date(p.created).toLocaleTimeString()}</td>
-              <td>{new Date(p.lastUsed).toLocaleTimeString()}</td>
-              <td className={p.status === "ok" ? "" : "error-text"} title={p.lastError}>
-                {p.status}
-              </td>
-            </tr>
-          ))}
-          {q.data.pools.length === 0 && (
+      <div className="table-frame">
+        <table className="simple admin-table">
+          <thead>
             <tr>
-              <td colSpan={9} className="muted">
-                No open pools.
-              </td>
+              <th>Target</th>
+              <th>Database</th>
+              <th>Credential</th>
+              <th>Total</th>
+              <th>Acquired</th>
+              <th>Idle</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th>Status</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {q.data.pools.map((p) => (
+              <tr key={p.targetId + p.database + p.kind}>
+                <td className="mono">{p.targetId}</td>
+                <td>{p.database || <span className="muted">default</span>}</td>
+                <td>{p.kind}</td>
+                <td>{p.total}</td>
+                <td>{p.acquired}</td>
+                <td>{p.idle}</td>
+                <td>{new Date(p.created).toLocaleTimeString()}</td>
+                <td>{new Date(p.lastUsed).toLocaleTimeString()}</td>
+                <td className={p.status === "ok" ? "" : "error-text"} title={p.lastError}>
+                  {p.status}
+                </td>
+              </tr>
+            ))}
+            {q.data.pools.length === 0 && (
+              <tr>
+                <td colSpan={9} className="muted">
+                  No open pools.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

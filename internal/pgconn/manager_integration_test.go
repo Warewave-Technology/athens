@@ -322,3 +322,37 @@ func TestTextResults(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+// Pooled connections that die (server restart, network reset) must not fail
+// the next request: athens reconnects once before giving up.
+func TestStaleConnectionsRecovered(t *testing.T) {
+	each(t, func(t *testing.T, in *pgtest.Instance) {
+		ctx := context.Background()
+		tg, client := in.Target("stale")
+		limits := pgtest.Limits()
+		limits.PoolMaxConns = 2
+		m := in.Manager(tg, client, limits)
+		defer m.CloseAll()
+		ping := func() error {
+			return m.Run(ctx, pgtest.Req(tg, "app", authz.Write), func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, "SELECT 1")
+				return err
+			})
+		}
+		if err := ping(); err != nil {
+			t.Fatal(err)
+		}
+		admin, err := in.Connect(ctx, "app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = admin.Close(ctx) }()
+		if _, err := admin.Exec(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name LIKE 'athens%' AND pid <> pg_backend_pid()"); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if err := ping(); err != nil {
+			t.Fatalf("first request after the connections died: %v", err)
+		}
+	})
+}
