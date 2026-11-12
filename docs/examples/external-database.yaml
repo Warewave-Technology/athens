@@ -11,6 +11,7 @@ metadata:
     athens.warewave.io/enabled: "true"
     athens.warewave.io/access: "crm-admins:rw, sales-analysts:ro"
     athens.warewave.io/secret: crm-flexible-login
+    athens.warewave.io/readonly-secret: crm-flexible-ro  # read users (sales-analysts) connect with this
     athens.warewave.io/database: crm
     athens.warewave.io/sslmode: verify-ca
     athens.warewave.io/ca-secret: azure-postgres-ca      # key ca.crt
@@ -27,8 +28,16 @@ kind: Secret
 metadata:
   name: crm-flexible-login
 stringData:
-  username: athens_reader
+  username: crm_owner
   password: change-me
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crm-flexible-ro
+stringData:
+  username: crm_ro
+  password: change-me-too
 ---
 apiVersion: v1
 kind: Secret

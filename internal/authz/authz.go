@@ -52,7 +52,9 @@ func (a *Authorizer) IsAdmin(groups []string) bool {
 // Level is the user's level on every database of t: the highest grant of the
 // target's access annotation naming one of the user's groups, capped at Read
 // by the readonly annotation and the global switch. A target without an
-// access annotation is usable by nobody. None means the target is invisible.
+// access annotation is usable by nobody, and read access needs a read-only
+// login (readonly-secret or readonly-provision). None means the target is
+// invisible.
 func (a *Authorizer) Level(groups []string, t discovery.Target) Level {
 	if t.Access == nil {
 		return None
@@ -74,6 +76,10 @@ func (a *Authorizer) Level(groups []string, t discovery.Target) Level {
 	}
 	if (a.readOnly || t.ReadOnly) && best > Read {
 		best = Read
+	}
+	// Read access only ever uses a read-only login (ADR-028).
+	if best == Read && t.RO == nil && !t.ROProvision {
+		return None
 	}
 	return best
 }

@@ -16,10 +16,12 @@ func TestLevel(t *testing.T) {
 	grants := &discovery.AccessPolicy{Grants: []discovery.AccessGrant{
 		{Group: "system-admins", Level: "write"}, {Group: "developers", Level: "read"},
 	}}
+	login := &discovery.CredentialRef{}
 	none := discovery.Target{Namespace: "ns", Name: "db"}
-	annotated := discovery.Target{Namespace: "ns", Name: "db", Access: grants}
-	ro := discovery.Target{Namespace: "ns", Name: "db", Access: grants, ReadOnly: true}
-	empty := discovery.Target{Namespace: "ns", Name: "db", Access: &discovery.AccessPolicy{}}
+	annotated := discovery.Target{Namespace: "ns", Name: "db", Access: grants, RO: login}
+	ro := discovery.Target{Namespace: "ns", Name: "db", Access: grants, ReadOnly: true, ROProvision: true}
+	empty := discovery.Target{Namespace: "ns", Name: "db", Access: &discovery.AccessPolicy{}, RO: login}
+	noLogin := discovery.Target{Namespace: "ns", Name: "db", Access: grants}
 	cases := []struct {
 		name   string
 		groups []string
@@ -36,6 +38,9 @@ func TestLevel(t *testing.T) {
 		{"readonly caps grants", []string{"11111111-aaaa"}, ro, Read},
 		{"empty policy grants nobody", []string{"developers"}, empty, None},
 		{"admin has no data access", []string{"admins"}, annotated, None},
+		// read access needs a read-only login (ADR-028); writers do not
+		{"read without a read-only login", []string{"developers"}, noLogin, None},
+		{"write without a read-only login", []string{"11111111-aaaa"}, noLogin, Write},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

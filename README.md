@@ -30,8 +30,10 @@ never leave the backend.
   Secrets. The athens configuration has no list of databases and no access
   rules.
 - **Read-only where it matters:** `athens.warewave.io/readonly: "true"`
-  caps everyone at read. Read access always runs in `READ ONLY`
-  transactions, with a separate read-only login when one is configured.
+  caps everyone at read. Read users never touch the main login: they
+  connect with a read-only login, your own (`readonly-secret`) or one athens
+  creates and manages (`readonly-provision: "true"`), always in `READ ONLY`
+  transactions.
 - **Data grid** with sorting, filters, paging and CSV export. Rows can be
   edited in place, and athens detects conflicting edits instead of
   overwriting them.
@@ -267,11 +269,14 @@ Annotate the object that runs it, naming the groups that may use it:
 
 ```bash
 kubectl -n payments annotate statefulset orders-db \
-  athens.warewave.io/enabled=true 'athens.warewave.io/access=dba:rw,payments-dev:ro'
+  athens.warewave.io/enabled=true 'athens.warewave.io/access=dba:rw,payments-dev:ro' \
+  athens.warewave.io/readonly-provision=true
 ```
 
 That is usually all. athens finds the Service and reads the login from the
-container env. Add annotations for an explicit login, a read-only login, a
+container env. `readonly-provision` lets athens create the read-only login
+`athens_read` (PostgreSQL 14+) that `ro` groups connect with; without a
+read-only login only `rw` groups can use the database. Add annotations for an explicit login, a read-only login, a
 display name or the production badge:
 
 ```yaml
@@ -313,7 +318,7 @@ metadata:
 | Entry | Means |
 |---|---|
 | `dba:rw` | the `dba` group may read and write |
-| `payments-dev:ro` | the `payments-dev` group may only read |
+| `payments-dev:ro` | the `payments-dev` group may only read (needs a read-only login) |
 | `7c1f0f6e-...:ro` | an Entra group object ID works as is |
 
 Entra tokens carry group object IDs. For readable names, map them in

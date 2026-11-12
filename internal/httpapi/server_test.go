@@ -59,8 +59,10 @@ func TestTargetsVisibility(t *testing.T) {
 	biOnly := &discovery.AccessPolicy{Grants: []discovery.AccessGrant{{Group: "bi", Level: "write"}}}
 	targets := []discovery.Target{
 		{ID: "demo/orders", Namespace: "demo", Name: "orders", DisplayName: "Orders", Source: "annotation", Warnings: []string{"w1"}, Access: testAccess},
-		{ID: "demo/bi-warehouse", Namespace: "demo", Name: "bi-warehouse", Source: "cnpg", Environment: "production", Access: biOnly, ReadOnly: true},
-		{ID: "other/unlisted", Namespace: "other", Name: "unlisted", Source: "annotation"}, // no access annotation
+		{ID: "demo/bi-warehouse", Namespace: "demo", Name: "bi-warehouse", Source: "cnpg", Environment: "production", Access: biOnly, ReadOnly: true,
+			ROProvision: true},
+		{ID: "demo/no-ro-login", Namespace: "demo", Name: "no-ro-login", Source: "annotation", Access: biOnly, ReadOnly: true}, // read without a read-only login
+		{ID: "other/unlisted", Namespace: "other", Name: "unlisted", Source: "annotation"},                                     // no access annotation
 	}
 	h := newHarness(t, harnessOpts{targets: targets})
 	list := func(c *client) []targetJSON {

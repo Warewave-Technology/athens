@@ -53,7 +53,7 @@ the `groups` claim of the ID token at sign-in and keeps them in the session.
 | Level | The user can |
 |---|---|
 | none | not see the database at all (the API answers 404, not 403, so names don't leak) |
-| `ro` / read | browse schemas, structure and rows, download CSV, run read-only SQL. Every query runs in a `READ ONLY` transaction, with the database's read-only login when one is annotated, otherwise switched to a read-only role (`pg_read_all_data` or `readonly-role`; see [DATABASES.md](DATABASES.md#read-only-access-inside-postgresql)). |
+| `ro` / read | browse schemas, structure and rows, download CSV, run read-only SQL. Every query runs in a `READ ONLY` transaction on the database's read-only login (`readonly-secret`, or `athens_read` with `readonly-provision`; see [DATABASES.md](DATABASES.md#read-only-access-inside-postgresql)). A database without a read-only login gives `ro` users no access. |
 | `rw` / write | everything above, plus edit, insert and delete rows in the grid and run DML/DDL in the SQL editor, with confirmations (see [Guardrails](#guardrails-for-writers)) |
 
 ## The access annotation
@@ -96,7 +96,8 @@ athens.warewave.io/readonly: "true"
 caps everyone on the access list at `ro`, whatever their entry says. Any
 value other than `true` or `false` counts as `true`. This is the switch for a
 production database that people should be able to look at but never change
-through athens.
+through athens. Since `ro` needs a read-only login, add `readonly-provision:
+"true"` or `readonly-secret` too; otherwise nobody can use the database.
 
 ## Group names or IDs
 
@@ -143,6 +144,9 @@ For a user and a database server (target):
 3. `readonly: "true"` on the target turns `rw` into `ro`.
 4. `authz.readOnly: true` in the configuration turns `rw` into `ro` for
    everyone.
+5. A result of `ro` on a target without a read-only login (`readonly-secret`
+   or `readonly-provision`) becomes **none**: read users never connect with
+   the main login (ADR-028).
 
 Admin groups get no data access from being admins (see
 [Administrators](#administrators)).
@@ -152,9 +156,13 @@ Admin groups get no data access from being admins (see
 "DBA", "payments dev" and "BI" are members of the groups `dba`,
 `payments-dev` and `bi`.
 
+Every row except the second one assumes the database also has a read-only
+login (`readonly-provision: "true"` or `readonly-secret`).
+
 | Database | Annotations | DBA | payments dev | BI |
 |---|---|---|---|---|
 | `payments/ledger` | — | none | none | none |
+| `payments/ledger` | `access: "dba:rw, payments-dev:ro"`, no read-only login | rw | none | none |
 | `payments/ledger` | `access: "dba:rw, payments-dev:ro"` | rw | ro | none |
 | `payments-staging/ledger` | `access: "dba:rw, payments-dev:rw"` | rw | rw | none |
 | `payments/ledger` | `access: "dba:rw, payments-dev:ro"` + `readonly: "true"` | ro | ro | none |
@@ -232,7 +240,8 @@ or, without editing the config:
 kubectl -n athens set env deploy/athens ATHENS_AUTHZ_READONLY=true
 ```
 
-Everyone is capped at `ro` until the switch is turned off. The UI shows a
+Everyone is capped at `ro` until the switch is turned off; databases without
+a read-only login are then unavailable to everyone. The UI shows a
 "Read-only mode" notice. A later `helm upgrade` resets environment changes
 made with `kubectl set env`; use `extraEnv` in your values to keep it.
 

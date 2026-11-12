@@ -53,6 +53,10 @@ func TestResolveFixtures(t *testing.T) {
 		"demo/acid-ledger":           {"ledger", "ledger-pw"},
 		"demo/crm":                   {"postgres", "crm-pw"},
 		"demo/locked":                {"postgres", "locked-pw"},
+		"demo/prov":                  {"postgres", "prov-pw"},
+		"demo/both":                  {"postgres", "both-pw"},
+		"demo/typo":                  {"postgres", "typo-pw"},
+		"demo/disabled":              {"postgres", "disabled-pw"},
 	}
 	wantDB := map[string]string{"demo/orders-db": "orders", "demo/inventory": "inventory", "demo/files": "filer", "demo/pg": "appdb"}
 	opt, err := discovery.OptionsFromConfig(config.Default().Discovery)

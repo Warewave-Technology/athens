@@ -34,6 +34,17 @@ athens.warewave.io/enabled: "true"                    # show this database
 athens.warewave.io/access: "dba:rw, payments-dev:ro"  # who may use it, and how
 ```
 
+Groups with `ro` also need a read-only login, because read users never use
+the main login. One more line lets athens create it:
+
+```yaml
+athens.warewave.io/readonly-provision: "true"         # athens manages the read-only login
+```
+
+or point `readonly-secret` at a login of your own (see
+[Read-only access inside PostgreSQL](#read-only-access-inside-postgresql)).
+Without either, only the `rw` groups can use the database.
+
 Nothing has to change in the athens configuration. Without `enabled` athens
 ignores the object. Without `access` the database appears only to athens
 admins, with a warning, and nobody can open it (see
@@ -60,7 +71,7 @@ in memory. They never appear in the UI, the API, logs or the audit trail.
 ### Plain StatefulSet (official image)
 
 [`examples/statefulset-minimal.yaml`](examples/statefulset-minimal.yaml): the
-only athens-specific lines are the two annotations.
+only athens-specific lines are the annotations.
 
 ```yaml
 apiVersion: apps/v1
@@ -70,6 +81,7 @@ metadata:
   annotations:
     athens.warewave.io/enabled: "true"
     athens.warewave.io/access: "orders-team:rw, analysts:ro"
+    athens.warewave.io/readonly-provision: "true"   # read-only login for analysts
 spec:
   # ...
   template:
@@ -90,12 +102,14 @@ athens resolves:
 - **password:** `POSTGRES_PASSWORD` from the Secret.
 - **database:** `orders`.
 - **host:** `orders-db.<namespace>.svc:5432`.
+- **read-only login:** `athens_read`, created by athens over the main login
+  (`orders` is the superuser the image creates).
 
 The same works for an existing workload without editing its manifest:
 
 ```bash
 kubectl -n orders annotate statefulset orders-db athens.warewave.io/enabled=true \
-  'athens.warewave.io/access=orders-team:rw,analysts:ro'
+  'athens.warewave.io/access=orders-team:rw,analysts:ro' athens.warewave.io/readonly-provision=true
 ```
 
 Supported credential forms in the container env:
@@ -243,6 +257,7 @@ metadata:
     athens.warewave.io/enabled: "true"
     athens.warewave.io/access: "crm-admins:rw, sales-analysts:ro"
     athens.warewave.io/secret: crm-flexible-login
+    athens.warewave.io/readonly-secret: crm-flexible-ro  # login for sales-analysts
     athens.warewave.io/database: crm
     athens.warewave.io/sslmode: verify-ca
     athens.warewave.io/ca-secret: azure-postgres-ca      # key ca.crt
@@ -269,67 +284,78 @@ networkPolicy:
 
 ## Read-only access inside PostgreSQL
 
-Users with read access always run in `READ ONLY` transactions, and the SQL
-editor rejects anything but reads for them. On top of that, athens limits
-what their queries can do inside PostgreSQL itself, in this order:
+Users with `ro` access only ever connect with a **read-only login**; they
+never use the main (`secret`) login. Each database chooses one of two:
 
-1. **A read-only login** (`readonly-secret`), if the database has one: read
-   users connect with it.
-2. **Otherwise, a read-only role on the main login:** each read transaction
-   starts with `SET LOCAL ROLE <role>`.
-   - The role is the one in `athens.warewave.io/readonly-role`, or
-     `pg_read_all_data` (built into PostgreSQL 14+) when none is set.
-   - Nobody has to create a login or a Secret for this. It works when the
-     main login is a superuser (common for env-discovered databases) or a
-     member of the role.
-   - Under the role, superuser-only functions such as `pg_read_file`,
-     `pg_ls_dir` and `COPY ... PROGRAM` are unavailable.
-3. **If neither is usable** (PostgreSQL 13, or a login that may not switch
-   roles), read users stay on the main login in `READ ONLY` transactions,
-   and admins see the warning "read users run on the main login".
+| | `readonly-secret` | `readonly-provision: "true"` |
+|---|---|---|
+| Who creates the login | you, once | athens, over the main login |
+| Login name | yours | `athens_read` |
+| Password | in a Secret you manage | random, kept in athens' memory only, new at every athens restart |
+| What it may read | whatever you grant | everything (`pg_read_all_data`) |
+| PostgreSQL | any version | 14 or later |
+| Main login needs | nothing extra | superuser, or `CREATEROLE` plus the right to grant `pg_read_all_data` |
 
-**A privileged main login needs a read-only login for read users.** A login
-counts as privileged when it is, or is a member of, a superuser, a
+If both are set, `readonly-secret` wins. **With neither, read users cannot
+use the database:** it does not appear for them at all (the database stays
+available to `rw` users), and admins see the warning "read users cannot
+connect". athens never falls back to the main login, and never switches
+roles on it: on a superuser login a role switch is not a boundary.
+
+On top of the login, read users always run in `READ ONLY` transactions and
+the SQL editor accepts only reads from them.
+
+**The read-only login must not be privileged.** athens checks it in every
+read transaction and refuses read users (`read_login_privileged`, plus an
+admin warning) when the login is, or is a member of, a superuser, a
 `REPLICATION` or `BYPASSRLS` role, or one of `pg_monitor`,
 `pg_read_all_settings`, `pg_read_all_stats`, `pg_signal_backend` and the
-server-file roles. On such a login a role switch is not a boundary: any
-function that runs SQL can switch back with `set_config('role', ...)`, and
-settings such as `primary_conninfo` hold passwords. So, without a
-`readonly-secret`:
-- the SQL editor refuses read users' queries (`read_login_required`);
-- the grid also refuses them unless the read-only role is usable (it is on
-  PostgreSQL 14+ when the login is a superuser);
-- structure and listings keep working; writers are not affected;
-- admins see the warning "read users cannot use the SQL editor".
+server-file roles. A grant made later is seen by the next query.
 
-Add a read-only login to give read users the full experience (ADR-027).
+Independent of the login, athens never shows the catalogs that hold
+credentials (`pg_authid`, `pg_shadow`, `pg_user_mapping`, `pg_subscription`,
+`information_schema._pg_user_mappings` ...), neither in the SQL editor nor
+in the grid. `pg_read_all_data` could read the password hashes otherwise.
 
-Independent of the login or role, athens never shows the catalogs that hold
-credentials (`pg_authid`, `pg_shadow`, `pg_user_mapping`, `pg_subscription`, `information_schema._pg_user_mappings` ...), neither in the
-SQL editor nor in the grid. A superuser login, and `pg_read_all_data`, could
-read their password hashes otherwise.
-
-### Without a read-only login
-
-Nothing to do on PostgreSQL 14+ with a superuser main login: athens uses
-`pg_read_all_data`. To pick another role, for example on PostgreSQL 13 or to
-read fewer tables, create a role without login once and name it:
-
-```sql
-CREATE ROLE athens_reader NOLOGIN;
-GRANT USAGE ON SCHEMA public TO athens_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO athens_reader;
-GRANT athens_reader TO billing_owner;   -- only if the main login is not a superuser
-```
+### Let athens create the login
 
 ```bash
-kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-role=athens_reader
+kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-provision=true
 ```
 
-### With a read-only login
+At the first read, athens connects with the main login and, in one
+transaction:
 
-A dedicated login is the strongest option: PostgreSQL itself sees a
-different user. Create one and point `readonly-secret` at it:
+```sql
+CREATE ROLE athens_read WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOREPLICATION NOBYPASSRLS INHERIT PASSWORD 'SCRAM-SHA-256$4096:...';
+COMMENT ON ROLE athens_read IS 'managed by athens (...)';
+GRANT pg_read_all_data TO athens_read;
+```
+
+- Only a SCRAM verifier is sent; the password itself never leaves athens and
+  is never written to a Secret, the store or a log.
+- Later runs (an athens restart, or a rejected password) only `ALTER ROLE
+  athens_read WITH LOGIN PASSWORD ...`, which a `CREATEROLE` login on a
+  managed service may do.
+- An existing `athens_read` role without athens' comment is left alone; read
+  users then cannot connect and admins see why. The same happens when the
+  role has gained anything beyond `LOGIN` and `pg_read_all_data` (another
+  attribute or role membership): athens refuses to use it until it is fixed
+  or dropped.
+- Roles are server-wide: one `athens_read` serves every database on the
+  server. Run one athens per PostgreSQL server; two installations would keep
+  replacing each other's password.
+- To remove it: drop the annotation and `DROP ROLE athens_read;`.
+
+If the setup fails (PostgreSQL 13, a main login that may not create roles,
+a foreign or widened `athens_read`), read users get `read_login_unavailable` and admins
+see the reason on the Discovery page. Writers are not affected.
+
+### Bring your own login
+
+A login you create can be narrower than `pg_read_all_data`. Create it and
+point `readonly-secret` at it:
 
 ```sql
 -- PostgreSQL 14+
@@ -338,7 +364,7 @@ GRANT pg_read_all_data TO billing_ro;
 ```
 
 ```sql
--- older versions: per schema
+-- older versions, or to limit what read users see: per schema
 CREATE ROLE billing_ro LOGIN PASSWORD 'change-me-too';
 GRANT CONNECT ON DATABASE billing TO billing_ro;
 GRANT USAGE ON SCHEMA public TO billing_ro;
@@ -355,8 +381,11 @@ kubectl -n billing create secret generic billing-db-ro \
 kubectl -n billing annotate deployment billing-db athens.warewave.io/readonly-secret=billing-db-ro
 ```
 
-If the read-only login is rejected, athens falls back to the main login (and
-the read-only role above) and shows a warning to admins.
+If PostgreSQL rejects the login or the Secret cannot be read, read users get
+`read_login_unavailable` and admins see the warning "the read-only login
+(readonly-secret) was rejected or its Secret cannot be read". athens reads
+the Secret again on the next attempt, so fixing the Secret is enough. The
+database's status for writers is not affected.
 
 ## Who may use a database
 
@@ -371,12 +400,14 @@ kubectl -n hr annotate statefulset hr-db 'athens.warewave.io/access=system-admin
 **Make it read-only for everyone on the list** (for example, production):
 
 ```bash
-kubectl -n hr annotate statefulset hr-db athens.warewave.io/readonly=true
+kubectl -n hr annotate statefulset hr-db athens.warewave.io/readonly=true \
+  athens.warewave.io/readonly-provision=true
 ```
 
-With both annotations ([`examples/access-annotations.yaml`](examples/access-annotations.yaml)),
+With these annotations ([`examples/access-annotations.yaml`](examples/access-annotations.yaml)),
 only `system-admins` and `developers` see the database, and both get read
-access.
+access through the read-only login. A `readonly` database without
+`readonly-provision` or `readonly-secret` is usable by nobody.
 
 | `access` entry | Meaning |
 |---|---|
@@ -394,7 +425,9 @@ What happens in edge cases:
 - **Mistakes make access narrower, never wider:**
   - an invalid entry (`qa:admin`, `nogroup`) is ignored and shown as a warning;
   - an `access` value that grants nobody hides the database from everyone;
-  - a `readonly` value other than `true`/`false` counts as `true`.
+  - a `readonly` value other than `true`/`false` counts as `true`;
+  - `ro` without a read-only login gives no access (warning "read users
+    cannot connect").
 
 To take a database out of athens, remove `enabled` (or set it to `"false"`).
 Removing only `access` keeps it discovered but closed to everyone.
@@ -411,8 +444,8 @@ Service, CNPG `Cluster` or Zalando `postgresql`.
 | `secret` | env lookup | Secret with the login (required on a Service) |
 | `user-key` / `password-key` | `username` / `password` | key names in `secret` |
 | `user` | from `secret` | fixed user name (Zalando: which user's Secret to use) |
-| `readonly-secret` | — | Secret with a read-only login for read users |
-| `readonly-role` | `pg_read_all_data` (PostgreSQL 14+) | role read users switch to when there is no read-only login |
+| `readonly-secret` | — | Secret with the read-only login read users connect with |
+| `readonly-provision` | `false` | `"true"`: athens creates and manages the read-only login `athens_read` (PostgreSQL 14+); `readonly-secret` wins |
 | `readonly-user-key` / `readonly-password-key` | `username` / `password` | key names in `readonly-secret` |
 | `database` | `POSTGRES_DB` and similar env, else the user name; `postgres` if that does not exist | database opened first (only used to list the databases) |
 | `service` | matched by selector | Service to connect through (on a workload) |
@@ -461,8 +494,11 @@ sidebar.
 | name ... is used by several targets; renamed | two objects share a name; one gets a `-sts` / `-deploy` / `-svc` suffix |
 | invalid ... annotation ignored | an annotation value was not understood |
 | access entry ... ignored | see [Who may use a database](#who-may-use-a-database) |
-| read-only credential was rejected | the `readonly-secret` login failed; athens uses the main login with READ ONLY transactions |
-| read users run on the main login in READ ONLY transactions | no read-only login, and the read-only role does not exist or the main login cannot switch to it; add `readonly-secret` or `readonly-role` |
+| read users cannot connect: no read-only login | the database grants `ro` (or is `readonly`) but has neither `readonly-secret` nor `readonly-provision`; read users do not see it |
+| the read-only login (readonly-secret) was rejected or its Secret cannot be read | PostgreSQL refused the `readonly-secret` login, or the Secret or key is missing; fix the Secret or the role |
+| the read-only login is privileged | the read-only login is a superuser or similar; read users are refused; use an unprivileged login |
+| read-only login setup failed: ... | `readonly-provision` could not create `athens_read`; the message says why (PostgreSQL 13, main login may not create roles, a foreign `athens_read` role, or one with extra attributes or memberships) |
+| readonly-provision ignored: readonly-secret is set | both annotations are set; the Secret's login is used |
 | database "..." does not exist; connecting to "postgres" instead | athens guessed the first database from the env or the user name and it doesn't exist; set `athens.warewave.io/database` to a database that does |
 
 The database does not appear at all:

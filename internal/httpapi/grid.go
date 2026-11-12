@@ -86,7 +86,7 @@ func (s *Server) rowsQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	start := time.Now()
 	var resp gridResponse
-	err = s.Pools.Run(r.Context(), s.dataReq(r, t, db, lvl), func(ctx context.Context, tx pgx.Tx) error {
+	err = s.Pools.Run(r.Context(), s.dbReq(r, t, db, lvl), func(ctx context.Context, tx pgx.Tx) error {
 		tbl, oid, _, err := loadTable(ctx, tx, r.PathValue("schema"), r.PathValue("rel"))
 		if err != nil {
 			return err
@@ -293,7 +293,7 @@ func (s *Server) rowsCell(w http.ResponseWriter, r *http.Request) error {
 	}
 	var value *string
 	var truncated bool
-	err = s.Pools.Run(r.Context(), s.dataReq(r, t, db, lvl), func(ctx context.Context, tx pgx.Tx) error {
+	err = s.Pools.Run(r.Context(), s.dbReq(r, t, db, lvl), func(ctx context.Context, tx pgx.Tx) error {
 		tbl, _, _, err := loadTable(ctx, tx, r.PathValue("schema"), r.PathValue("rel"))
 		if err != nil {
 			return err

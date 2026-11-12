@@ -409,19 +409,31 @@ func (b *builder) applyCommonAnnotations(t *Target, m metav1.ObjectMeta) {
 	if ca, ok := b.ann(m, "ca-secret"); ok && ca != "" {
 		t.CA = &KeyRef{Name: ca, Key: b.annOr(m, "ca-key", "ca.crt")}
 	}
-	if role, ok := b.ann(m, "readonly-role"); ok && role != "" {
-		t.ReadOnlyRole = role
-	}
 	if ro, ok := b.ann(m, "readonly-secret"); ok && ro != "" {
 		t.RO = &CredentialRef{
 			User:     ValueSource{Secret: &KeyRef{Name: ro, Key: b.annOr(m, "readonly-user-key", "username")}},
 			Password: ValueSource{Secret: &KeyRef{Name: ro, Key: b.annOr(m, "readonly-password-key", "password")}},
 		}
 	}
+	if v, ok := b.ann(m, "readonly-provision"); ok {
+		switch strings.ToLower(v) {
+		case "true":
+			t.ROProvision = t.RO == nil
+			if t.RO != nil {
+				t.Warnings = append(t.Warnings, "readonly-provision ignored: readonly-secret is set")
+			}
+		case "false", "":
+		default:
+			t.Warnings = append(t.Warnings, fmt.Sprintf("readonly-provision annotation %q is not true/false; ignored", v))
+		}
+	}
 	if strings.HasPrefix(t.SSLMode, "verify-") && t.CA == nil {
 		t.Warnings = append(t.Warnings, "sslmode "+t.SSLMode+" without a CA secret uses the system roots")
 	}
 	b.applyAccess(t, m)
+	if t.RO == nil && !t.ROProvision && t.Access != nil && len(t.Access.Grants) > 0 && (t.ReadOnly || slices.ContainsFunc(t.Access.Grants, func(g AccessGrant) bool { return g.Level == "read" })) {
+		t.Warnings = append(t.Warnings, fmt.Sprintf("read users cannot connect: no read-only login; add %[1]s/readonly-secret or %[1]s/readonly-provision", b.opt.AnnotationPrefix))
+	}
 }
 
 // applyAccess reads the readonly and access annotations (ADR-022, ADR-023).

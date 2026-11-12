@@ -66,10 +66,13 @@ type Options struct {
 }
 
 type pool struct {
-	key      Key
-	db       string // database the pool connects to (resolved for Database "")
-	p        *pgxpool.Pool
-	created  time.Time
+	key     Key
+	db      string // database the pool connects to (resolved for Database "")
+	p       *pgxpool.Pool
+	created time.Time
+	// provGen: generation of the provisioned password the pool was built
+	// with (readonly-provision only, ADR-028).
+	provGen  uint64
 	mu       sync.Mutex
 	lastUsed time.Time
 }
@@ -94,9 +97,10 @@ type targetState struct {
 	// missingDB / fallbackDB: the guessed initial database does not exist and
 	// the default-database pool uses fallbackDB instead.
 	missingDB, fallbackDB string
-	// roleChecks: per credential kind, the read-only role read users switch
-	// to and whether the login is privileged (ADR-026, ADR-027).
-	roleChecks map[CredKind]roleCheck
+	// roPrivileged: the read-only login was privileged at the last read.
+	roPrivileged bool
+	// provisionErr: why the provisioned read-only login could not be set up.
+	provisionErr string
 	// dbs: databases of the target (cached at dbsAt, ADR-027).
 	dbs     map[string]bool
 	dbsAt   time.Time
@@ -112,6 +116,11 @@ type Manager struct {
 	mu     sync.Mutex
 	pools  map[Key]*pool
 	states map[string]*targetState
+
+	// provisioned holds the provisioned logins' passwords (memory only,
+	// ADR-028), guarded by mu; provLocks serialize setting up each target's.
+	provisioned map[string]provCred
+	provLocks   map[string]*sync.Mutex
 }
 
 func NewManager(o Options) *Manager {
@@ -121,7 +130,8 @@ func NewManager(o Options) *Manager {
 	if o.ConnectTimeout == 0 {
 		o.ConnectTimeout = 5 * time.Second
 	}
-	return &Manager{opt: o, pools: map[Key]*pool{}, states: map[string]*targetState{}}
+	return &Manager{opt: o, pools: map[Key]*pool{}, states: map[string]*targetState{},
+		provisioned: map[string]provCred{}, provLocks: map[string]*sync.Mutex{}}
 }
 
 func (m *Manager) state(id string) *targetState {
@@ -145,12 +155,6 @@ type Request struct {
 	ReadOnly bool
 	// Reset runs DISCARD ALL after the transaction (SQL editor, ADR-011).
 	Reset bool
-	// UserSQL marks SQL written by the user (SQL editor). Read users may not
-	// run it on a privileged login (ADR-027).
-	UserSQL bool
-	// UserData marks reads of table rows (grid). Read users may not run them
-	// on a privileged login without a usable read-only role (ADR-027).
-	UserData bool
 	// Notices receives NOTICE/WARNING messages raised during fn.
 	Notices *[]Notice
 }
@@ -173,7 +177,6 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 	m.mu.Lock()
 	st := m.state(req.Target.ID)
 	st.running[h] = struct{}{}
-	useRO := req.Level == authz.Read && req.Target.RO != nil && !st.roFailed
 	m.mu.Unlock()
 	defer func() {
 		m.mu.Lock()
@@ -181,9 +184,19 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		m.mu.Unlock()
 	}()
 
-	kind := RW
-	if useRO {
+	// Read users only ever use the read-only login; a target without one is
+	// not readable (ADR-028). Writers use the RW login.
+	var kind CredKind
+	switch req.Level {
+	case authz.Write:
+		kind = RW
+	case authz.Read:
+		if req.Target.RO == nil && !req.Target.ROProvision {
+			return ErrReadLoginRequired
+		}
 		kind = RO
+	default:
+		return ErrNoAccess
 	}
 	if req.Database != "" {
 		ok, err := m.databaseExists(ctx, req.Target, req.Database)
@@ -199,13 +212,12 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 	}
 	key := Key{TargetID: req.Target.ID, Database: req.Database, Kind: kind}
 	conn, err := m.acquire(ctx, req.Target, key)
-	if err != nil && kind == RO && isAuthError(err) {
-		m.log().Warn("read-only credential rejected, falling back to rw + READ ONLY", "target", req.Target.ID)
+	if kind == RO {
+		// no fallback to the RW login: an unusable readonly-secret login only
+		// produces an admin warning (provisioning errors have their own)
 		m.mu.Lock()
-		m.state(req.Target.ID).roFailed = true
+		m.state(req.Target.ID).roFailed = req.Target.RO != nil && errors.Is(err, ErrReadLoginUnavailable)
 		m.mu.Unlock()
-		key.Kind = RW
-		conn, err = m.acquire(ctx, req.Target, key)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -213,10 +225,7 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		}
 		return err
 	}
-	// Read users drop to a read-only role and are checked for a privileged
-	// login, on either credential (ADR-026, ADR-027).
-	dropRole := req.Level == authz.Read
-	err = m.runOn(ctx, conn, req, dropRole, key.Kind, fn)
+	err = m.runOn(ctx, conn, req, fn)
 	if errors.Is(err, errStaleConn) {
 		// The pooled connections died underneath us (server or network
 		// restart). Nothing reached the server, so drop the pool's idle
@@ -226,7 +235,7 @@ func (m *Manager) Run(ctx context.Context, req Request, fn func(ctx context.Cont
 		if conn, err = m.acquire(ctx, req.Target, key); err != nil {
 			return err
 		}
-		err = m.runOn(ctx, conn, req, dropRole, key.Kind, fn)
+		err = m.runOn(ctx, conn, req, fn)
 	}
 	if errors.Is(err, errStaleConn) {
 		return &ErrUnavailable{Cause: err}
@@ -259,7 +268,7 @@ func (m *Manager) resetPool(key Key) {
 
 func (m *Manager) log() *slog.Logger { return m.opt.Log }
 
-func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dropRole bool, kind CredKind, fn func(context.Context, pgx.Tx) error) (err error) {
+func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, fn func(context.Context, pgx.Tx) error) (err error) {
 	defer func() {
 		if req.Reset {
 			// User SQL may have changed session state; never hand it to the
@@ -303,16 +312,18 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 		AppName(req.Email), ms(l.StatementTimeout.D()), ms(l.LockTimeout.D()), ms(2*l.StatementTimeout.D())); err != nil {
 		return classify(ctx, err)
 	}
-	if dropRole {
-		rc, err := m.setReadRole(ctx, tx, req.Target, kind)
-		if err != nil {
+	if req.Level == authz.Read {
+		// The read-only login must not be privileged itself; checked in
+		// every transaction because roles can be granted at any time.
+		var privileged bool
+		if err = tx.QueryRow(ctx, privilegedLogin).Scan(&privileged); err != nil {
 			return classify(ctx, err)
 		}
-		// On a privileged login a role switch is no boundary for user SQL,
-		// and without one even athens-generated reads would run with the
-		// login's privileges (settings, other sessions): refuse both.
-		if rc.privileged && (req.UserSQL || (req.UserData && rc.role == "")) {
-			return ErrReadLoginRequired
+		m.mu.Lock()
+		m.state(req.Target.ID).roPrivileged = privileged
+		m.mu.Unlock()
+		if privileged {
+			return ErrReadLoginPrivileged
 		}
 	}
 	if err = fn(ctx, tx); err != nil {
@@ -324,121 +335,34 @@ func (m *Manager) runOn(ctx context.Context, conn *pgxpool.Conn, req Request, dr
 	return nil
 }
 
-// defaultReadRole is the predefined role (PostgreSQL 14+) that may read every
-// table, view and sequence but not run superuser-only functions.
-const defaultReadRole = "pg_read_all_data"
-
-// roleCheck is the cached result of checking one login of a target.
-type roleCheck struct {
-	role       string // usable read-only role, "" if none
-	privileged bool   // the login has privileges a role switch cannot contain
-}
-
 // privilegedLogin: the login is, or is a member of, a role that is superuser,
 // REPLICATION or BYPASSRLS, or of a predefined role that reads server files,
-// settings or other sessions, or signals backends. Through any function that
-// runs SQL a user can SET ROLE back to such a login (ADR-027).
+// settings or other sessions, or signals backends. Such a login cannot serve
+// read users: through any function that runs SQL they could use its
+// privileges (ADR-027, ADR-028).
 const privilegedLogin = `SELECT EXISTS (SELECT 1 FROM pg_roles r
 	WHERE (r.rolsuper OR r.rolreplication OR r.rolbypassrls OR r.rolname IN ('pg_read_server_files', 'pg_write_server_files',
 		'pg_execute_server_program', 'pg_signal_backend', 'pg_read_all_settings', 'pg_read_all_stats', 'pg_monitor'))
 	AND pg_has_role(session_user, r.oid, 'MEMBER'))`
 
-// setReadRole switches a read user's transaction to the target's read-only
-// role with SET LOCAL ROLE (reset at commit; RESET/SET ROLE are rejected by
-// sqlclass) and reports what it knows about the login. Whether the login is
-// privileged is checked in every transaction (a role can be granted at any
-// time); whether it may switch to the role is checked inside a savepoint once
-// per target and credential kind and cached until a pool of that kind is
-// created again.
-func (m *Manager) setReadRole(ctx context.Context, tx pgx.Tx, t discovery.Target, kind CredKind) (roleCheck, error) {
-	role := t.ReadOnlyRole
-	if role == "" {
-		role = defaultReadRole
-	}
-	set := "SET LOCAL ROLE " + pgx.Identifier{role}.Sanitize()
-	var privileged bool
-	if err := tx.QueryRow(ctx, privilegedLogin).Scan(&privileged); err != nil {
-		return roleCheck{}, err
-	}
-	m.mu.Lock()
-	st := m.state(t.ID)
-	rc, checked := st.roleChecks[kind]
-	if checked && rc.privileged != privileged {
-		rc.privileged = privileged
-		st.roleChecks[kind] = rc
-	}
-	m.mu.Unlock()
-	if checked {
-		if rc.role == "" {
-			return rc, nil
-		}
-		if _, err := tx.Exec(ctx, set); err != nil {
-			m.mu.Lock()
-			delete(m.state(t.ID).roleChecks, kind) // role dropped or revoked: check again next time
-			m.mu.Unlock()
-			return rc, err
-		}
-		return rc, nil
-	}
-
-	ok := false
-	if _, err := tx.Exec(ctx, "SAVEPOINT athens_role"); err != nil {
-		return rc, err
-	}
-	var n int
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM pg_roles r WHERE r.rolname = $1 AND pg_has_role(current_user, r.oid, 'MEMBER')`, role).Scan(&n)
-	if err == nil && n == 1 {
-		if _, err = tx.Exec(ctx, set); err == nil {
-			ok = true
-		}
-	}
-	if !ok {
-		if ctx.Err() != nil {
-			return rc, ctx.Err()
-		}
-		if _, rerr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT athens_role"); rerr != nil {
-			return rc, rerr
-		}
-		if kind == RW {
-			m.log().Warn("no usable read-only role; read users run on the rw login in READ ONLY transactions",
-				"target", t.ID, "role", role, "privileged", privileged)
-		}
-	} else if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT athens_role"); err != nil {
-		return rc, err
-	}
-	rc = roleCheck{privileged: privileged}
-	if ok {
-		rc.role = role
-	}
-	m.mu.Lock()
-	st = m.state(t.ID)
-	if st.roleChecks == nil {
-		st.roleChecks = map[CredKind]roleCheck{}
-	}
-	st.roleChecks[kind] = rc
-	m.mu.Unlock()
-	return rc, nil
-}
-
-// PrivilegedRW reports, after the first read on the RW login, that the login
-// is privileged, so read users cannot use the SQL editor there (ADR-027).
-func (m *Manager) PrivilegedRW(id string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, ok := m.states[id]
-	return ok && s.roleChecks[RW].privileged
-}
-
-// ReadRole reports the read-only role of a target after the first read on its
-// RW login: checked is false before that; role is "" when none is usable.
-func (m *Manager) ReadRole(id string) (role string, checked bool) {
+// ProvisionError reports why the provisioned read-only login of a target
+// could not be set up ("" if it could, or was not attempted).
+func (m *Manager) ProvisionError(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.states[id]; ok {
-		rc, checked := s.roleChecks[RW]
-		return rc.role, checked
+		return s.provisionErr
 	}
-	return "", false
+	return ""
+}
+
+// PrivilegedRO reports that the target's read-only login was found
+// privileged at the last read (read users are refused, ADR-028).
+func (m *Manager) PrivilegedRO(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.states[id]
+	return ok && s.roPrivileged
 }
 
 func ms(d time.Duration) string { return strconv.FormatInt(d.Milliseconds(), 10) }
@@ -459,7 +383,7 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	var conn *pgxpool.Conn
 	var err error
 	for range 2 {
-		if p, err = m.pool(ctx, t, key, false); err != nil {
+		if p, err = m.pool(ctx, t, key, nil, false); err != nil {
 			return nil, err
 		}
 		conn, err = p.p.Acquire(ctx)
@@ -470,13 +394,15 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 	}
 	if err != nil && isAuthError(err) {
 		m.log().Info("authentication failed, re-resolving credentials", "target", t.ID, "kind", key.Kind)
-		if p, err = m.pool(ctx, t, key, true); err != nil {
+		// a provisioned login gets a new password unless another request
+		// already set one (the pool then just takes the current password)
+		if p, err = m.pool(ctx, t, key, p, true); err != nil {
 			return nil, err
 		}
 		conn, err = p.p.Acquire(ctx)
 	}
 	if err != nil && key.Database == "" && isMissingDatabase(err) {
-		conn, p, err = m.acquireFallbackDB(ctx, t, key, p.db, err)
+		conn, p, err = m.acquireFallbackDB(ctx, t, key, p, err)
 	}
 	if err != nil && key.Database != "" {
 		// The server refused this one database (it was dropped, or the login
@@ -491,12 +417,26 @@ func (m *Manager) acquire(ctx context.Context, t discovery.Target, key Key) (*pg
 			return nil, ErrDatabaseDenied
 		}
 	}
+	if err != nil && key.Kind == RO {
+		// the read-only login's problem, never the target's status, which
+		// only RW connections decide (ADR-028)
+		if errors.Is(err, ErrReadLoginUnavailable) {
+			return nil, err
+		}
+		if isAuthError(err) {
+			m.log().Warn("read-only login rejected", "target", t.ID)
+			return nil, &errReadLogin{cause: err}
+		}
+		return nil, &ErrUnavailable{Cause: err}
+	}
 	if err != nil {
 		m.recordError(t.ID, err)
 		return nil, &ErrUnavailable{Cause: err}
 	}
 	p.touch()
-	m.recordOK(t.ID)
+	if key.Kind == RW {
+		m.recordOK(t.ID)
+	}
 	return conn, nil
 }
 
@@ -555,7 +495,8 @@ var fallbackDBs = []string{"postgres", "template1"}
 
 // acquireFallbackDB recreates the default-database pool of t on the first
 // fallback database that exists and remembers it until the target changes.
-func (m *Manager) acquireFallbackDB(ctx context.Context, t discovery.Target, key Key, missing string, cause error) (*pgxpool.Conn, *pool, error) {
+func (m *Manager) acquireFallbackDB(ctx context.Context, t discovery.Target, key Key, stale *pool, cause error) (*pgxpool.Conn, *pool, error) {
+	missing := stale.db
 	for _, db := range fallbackDBs {
 		if db == missing {
 			continue
@@ -564,10 +505,11 @@ func (m *Manager) acquireFallbackDB(ctx context.Context, t discovery.Target, key
 		st := m.state(t.ID)
 		st.missingDB, st.fallbackDB = missing, db
 		m.mu.Unlock()
-		p, err := m.pool(ctx, t, key, true)
+		p, err := m.pool(ctx, t, key, stale, false)
 		if err != nil {
 			return nil, nil, err
 		}
+		stale = p
 		conn, err := p.p.Acquire(ctx)
 		if err == nil {
 			m.log().Warn("initial database does not exist, using a fallback", "target", t.ID, "missing", missing, "using", db)
@@ -640,10 +582,14 @@ func (m *Manager) makeRoom(id string) error {
 	return nil
 }
 
-func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreate bool) (*pool, error) {
+// pool returns the pool for key, creating it lazily. stale is a pool that
+// failed (authentication, missing database): it is replaced unless another
+// request already did. reprovision asks for a new provisioned password when
+// stale was built with the current one.
+func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, stale *pool, reprovision bool) (*pool, error) {
 	m.mu.Lock()
 	p, ok := m.pools[key]
-	if ok && recreate {
+	if ok && p == stale {
 		delete(m.pools, key)
 		go p.p.Close()
 		ok = false
@@ -659,9 +605,21 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 	if full != nil {
 		return nil, &ErrUnavailable{Cause: full}
 	}
-	cfg, err := m.poolConfig(ctx, t, key)
+	var staleGen uint64
+	if stale != nil {
+		staleGen = stale.provGen
+	}
+	cfg, gen, err := m.poolConfig(ctx, t, key, staleGen, reprovision)
 	if err != nil {
 		metrics.PoolCreate.WithLabelValues(t.ID, "error").Inc()
+		if key.Kind == RO {
+			// a read-login problem (unreadable readonly-secret, failed
+			// provisioning), not the target's: admin warning only
+			if !errors.Is(err, ErrReadLoginUnavailable) {
+				err = &errReadLogin{cause: err}
+			}
+			return nil, err
+		}
 		m.recordError(t.ID, err)
 		return nil, &ErrUnavailable{Cause: err}
 	}
@@ -671,7 +629,7 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 		return nil, &ErrUnavailable{Cause: err}
 	}
 	metrics.PoolCreate.WithLabelValues(t.ID, "ok").Inc()
-	created := &pool{key: key, db: cfg.ConnConfig.Database, p: np, created: time.Now(), lastUsed: time.Now()}
+	created := &pool{key: key, db: cfg.ConnConfig.Database, p: np, provGen: gen, created: time.Now(), lastUsed: time.Now()}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if existing, ok := m.pools[key]; ok { // lost a creation race
@@ -679,20 +637,26 @@ func (m *Manager) pool(ctx context.Context, t discovery.Target, key Key, recreat
 		return existing, nil
 	}
 	m.pools[key] = created
-	if st, ok := m.states[t.ID]; ok {
-		delete(st.roleChecks, key.Kind) // credentials may have changed: check the login again
-	}
 	return created, nil
 }
 
-func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (*pgxpool.Config, error) {
-	ref := t.RW
-	if key.Kind == RO {
-		ref = *t.RO
+func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key, staleGen uint64, reprovision bool) (*pgxpool.Config, uint64, error) {
+	var creds credentials.Credentials
+	var gen uint64
+	var err error
+	switch {
+	case key.Kind == RO && t.RO == nil && t.ROProvision:
+		creds, gen, err = m.provisionedCreds(ctx, t, staleGen, reprovision)
+		if err != nil {
+			return nil, 0, err
+		}
+	case key.Kind == RO:
+		creds, err = m.opt.Resolver.Resolve(ctx, t.Namespace, *t.RO)
+	default:
+		creds, err = m.opt.Resolver.Resolve(ctx, t.Namespace, t.RW)
 	}
-	creds, err := m.opt.Resolver.Resolve(ctx, t.Namespace, ref)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s credentials: %w", key.Kind, err)
+		return nil, 0, fmt.Errorf("resolve %s credentials: %w", key.Kind, err)
 	}
 	db := key.Database
 	if db == "" {
@@ -710,7 +674,7 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 	var ca []byte
 	if t.CA != nil && (mode == "verify-ca" || mode == "verify-full") {
 		if ca, err = m.opt.Resolver.CA(ctx, t.Namespace, t.CA); err != nil {
-			return nil, fmt.Errorf("resolve CA: %w", err)
+			return nil, 0, fmt.Errorf("resolve CA: %w", err)
 		}
 	}
 	parseMode := mode
@@ -723,7 +687,7 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 	}).String()
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	cc := cfg.ConnConfig
 	cc.User, cc.Password = creds.User, creds.Password
@@ -732,7 +696,7 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 	if len(ca) > 0 {
 		tc, err := tlsWithCA(ca, t.Host, mode == "verify-full")
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		cc.TLSConfig, cc.Fallbacks = tc, nil
 	}
@@ -766,7 +730,7 @@ func (m *Manager) poolConfig(ctx context.Context, t discovery.Target, key Key) (
 	cfg.MinConns = 0
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = time.Minute
-	return cfg, nil
+	return cfg, gen, nil
 }
 
 func tlsWithCA(ca []byte, host string, verifyHost bool) (*tls.Config, error) {
@@ -810,6 +774,10 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 			delete(m.pools, k)
 		}
 	}
+	if e.Type == discovery.Removed {
+		delete(m.provisioned, e.Target.ID)
+		delete(m.provLocks, e.Target.ID)
+	}
 	if s, ok := m.states[e.Target.ID]; ok {
 		if e.Type == discovery.Removed {
 			for h := range s.running {
@@ -819,7 +787,7 @@ func (m *Manager) TargetChanged(e discovery.Event) {
 		} else {
 			s.roFailed = false
 			s.missingDB, s.fallbackDB = "", ""
-			s.roleChecks = nil
+			s.roPrivileged, s.provisionErr = false, ""
 			s.dbs, s.dbsAt = nil, time.Time{}
 		}
 	}
@@ -839,8 +807,9 @@ func (m *Manager) Status(id string) string {
 	return "unknown"
 }
 
-// ROFallback reports whether the read-only credential was rejected.
-func (m *Manager) ROFallback(id string) bool {
+// ROFailed reports whether the read-only credential was rejected at the
+// last read (read users cannot connect then).
+func (m *Manager) ROFailed(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.states[id]
@@ -966,6 +935,9 @@ func (m *Manager) healthCheck(ctx context.Context) {
 	m.mu.Lock()
 	byTarget := map[string]*pool{}
 	for k, p := range m.pools {
+		if k.Kind != RW {
+			continue // the status is the RW login's; read-login problems are warnings
+		}
 		// prefer the default-database pool: it reflects the target, not
 		// whichever database a user opened
 		if cur, ok := byTarget[k.TargetID]; !ok || (k.Database == "" && cur.key.Database != "") {

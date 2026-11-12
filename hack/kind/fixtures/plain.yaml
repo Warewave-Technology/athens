@@ -15,7 +15,9 @@ kind: StatefulSet
 metadata:
   name: orders-db
   namespace: athens-demo
-  annotations: {athens.warewave.io/enabled: "true", athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro"}
+  # readonly-provision: athens creates the athens_read login for read users (ADR-028)
+  annotations: {athens.warewave.io/enabled: "true", athens.warewave.io/access: "dev-writers:rw,dev-readers:ro,e2e-writers:rw,e2e-readers:ro",
+    athens.warewave.io/readonly-provision: "true"}
 spec:
   serviceName: orders-db
   selector: {matchLabels: {app: orders-db}}

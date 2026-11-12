@@ -35,7 +35,8 @@ PostgreSQL databases running in the cluster:
 A user whose groups are not on a target's `access` annotation does not see
 that target at all (404, not 403, to avoid enumeration); a target without
 the annotation is invisible to everyone. The `readonly` annotation caps
-everyone at read (DISCOVERY.md §2b, ADR-022, ADR-023).
+everyone at read (DISCOVERY.md §2b, ADR-022, ADR-023). Read access needs a
+read-only login; without one, `ro` users get none (ADR-028).
 
 ## 3. Architecture
 
@@ -143,7 +144,9 @@ a target as two path segments `/targets/{ns}/{name}` (no `%2F`, ADR-012).
 
 ### 6.2 Pool manager (`internal/pgconn`)
 - Key: `(targetID, database, credentialKind)` where credentialKind ∈ {rw, ro}.
-  `ro` exists only if target has a read-only credential (DISCOVERY §5).
+  `ro` is used for every read-level request; it exists only if the target
+  has `readonly-secret` or `readonly-provision` (DISCOVERY §5, ADR-028).
+  Read requests never use `rw`.
 - `pgxpool` per key, created lazily, `MaxConns = limits.poolMaxConns` (default 4),
   `MinConns = 0`, `MaxConnIdleTime = 5m`. Pool closed after 15 min unused.
 - On auth failure (SQLSTATE 28P01 / 28000): re-resolve credentials, recreate
@@ -162,7 +165,7 @@ SET LOCAL application_name = 'athens:<email>'      -- truncated to 63 bytes
 SET LOCAL statement_timeout = '<limits.statementTimeout>'
 SET LOCAL lock_timeout = '<limits.lockTimeout>'
 SET LOCAL idle_in_transaction_session_timeout = '<limits.statementTimeout*2>'
-SET LOCAL ROLE <readonly-role | pg_read_all_data>  -- read users on the RW login only, if usable (ADR-026)
+SELECT <login is privileged>  -- read users only: refused if so (ADR-028)
 <statement>
 COMMIT | ROLLBACK
 ```
@@ -238,9 +241,10 @@ The list (schema-qualified or not, case-insensitive): `pg_terminate_backend`,
 
 ### 7.3 Enforcement
 - level `read`: class must be `read` (EXPLAIN ANALYZE of SELECT allowed). Else
-  403 `forbidden_statement`. Still executed in READ ONLY tx. On a privileged
-  RW login (superuser, REPLICATION, BYPASSRLS) without an RO login, editor
-  SQL from read users is refused with 403 `read_login_required` (ADR-027).
+  403 `forbidden_statement`. Still executed in READ ONLY tx, always on the
+  RO login (`readonly-secret` or `readonly-provision`); targets without one
+  are invisible to read users, and a privileged RO login is refused with 403
+  `read_login_privileged` (ADR-028).
 - Functions that run SQL given as text (`query_to_xml` family, `ts_stat`,
   `ts_rewrite`), server file, replication slot and large-object functions are
   side-effect functions; plain EXPLAIN is walked for functions and credential

@@ -29,7 +29,8 @@
       },
       "warnings": [
         "access entry \"bad-entry\" ignored: expected group:rw or group:ro",
-        "access entry \"qa:admin\" ignored: level must be rw or ro"
+        "access entry \"qa:admin\" ignored: level must be rw or ro",
+        "read users cannot connect: no read-only login; add athens.warewave.io/readonly-secret or athens.warewave.io/readonly-provision"
       ],
       "readOnly": true,
       "access": {

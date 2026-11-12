@@ -211,6 +211,21 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("provisioned read-only login", func(t *testing.T) {
+		// orders-db: readonly-provision, athens manages athens_read (ADR-028)
+		var out struct{ Rows [][]*string }
+		if code := reader.do(http.MethodPost, tpath("athens-demo/orders-db")+"/db/orders/query", map[string]any{"sql": "select session_user"}, &out); code != 200 || *out.Rows[0][0] != "athens_read" {
+			t.Fatalf("reader on orders-db: %d %v", code, out.Rows)
+		}
+		if code := reader.do(http.MethodPost, tpath("athens-demo/orders-db")+"/db/orders/query", map[string]any{"sql": "create table x(id int)"}, nil); code != 403 {
+			t.Fatalf("reader create: %d", code)
+		}
+		// no read-only login: read users do not see the target at all
+		if code := reader.do(http.MethodGet, tpath("athens-demo/scratch-db")+"/databases", nil, nil); code != 404 {
+			t.Fatalf("reader on scratch-db: %d", code)
+		}
+	})
+
 	t.Run("live discovery update", func(t *testing.T) {
 		rc, err := rest.InClusterConfig()
 		if err != nil {
@@ -266,6 +281,7 @@ func TestEndToEnd(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "access-db", Annotations: map[string]string{
 				"athens.warewave.io/enabled": "true", "athens.warewave.io/secret": "access-db",
 				"athens.warewave.io/readonly": "true", "athens.warewave.io/access": "e2e-readers:rw",
+				"athens.warewave.io/readonly-provision": "true",
 			}},
 			Spec: appsv1.StatefulSetSpec{
 				Replicas: new(int32), Selector: &metav1.LabelSelector{MatchLabels: labels},
@@ -321,7 +337,7 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("non-admin sees warnings for %s", x.ID)
 			}
 		}
-		if !slices.Contains(ids, "athens-demo/orders-db") {
+		if !slices.Contains(ids, "athens-demo/orders-db") || slices.Contains(ids, "athens-demo/scratch-db") {
 			t.Fatalf("reader targets: %v", ids)
 		}
 		if code := reader.do(http.MethodGet, "/admin/discovery", nil, nil); code != 404 {

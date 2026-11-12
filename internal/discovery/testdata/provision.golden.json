@@ -1,0 +1,190 @@
+{
+  "targets": [
+    {
+      "id": "demo/both",
+      "namespace": "demo",
+      "name": "both",
+      "displayName": "both",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "both",
+        "uid": "uid-both"
+      },
+      "service": "both",
+      "host": "both.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "both-env",
+            "key": "password"
+          }
+        }
+      },
+      "ro": {
+        "user": {
+          "secret": {
+            "name": "both-ro",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "both-ro",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "readonly-provision ignored: readonly-secret is set"
+      ],
+      "access": {
+        "grants": [
+          {
+            "group": "developers",
+            "level": "read"
+          },
+          {
+            "group": "dbas",
+            "level": "write"
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo/disabled",
+      "namespace": "demo",
+      "name": "disabled",
+      "displayName": "disabled",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "disabled",
+        "uid": "uid-disabled"
+      },
+      "service": "disabled",
+      "host": "disabled.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "disabled-env",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "read users cannot connect: no read-only login; add athens.warewave.io/readonly-secret or athens.warewave.io/readonly-provision"
+      ],
+      "access": {
+        "grants": [
+          {
+            "group": "developers",
+            "level": "read"
+          },
+          {
+            "group": "dbas",
+            "level": "write"
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo/prov",
+      "namespace": "demo",
+      "name": "prov",
+      "displayName": "prov",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "prov",
+        "uid": "uid-prov"
+      },
+      "service": "prov",
+      "host": "prov.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "prov-env",
+            "key": "password"
+          }
+        }
+      },
+      "roProvision": true,
+      "access": {
+        "grants": [
+          {
+            "group": "developers",
+            "level": "read"
+          },
+          {
+            "group": "dbas",
+            "level": "write"
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo/typo",
+      "namespace": "demo",
+      "name": "typo",
+      "displayName": "typo",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "typo",
+        "uid": "uid-typo"
+      },
+      "service": "typo",
+      "host": "typo.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "typo-env",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "readonly-provision annotation \"maybe\" is not true/false; ignored",
+        "read users cannot connect: no read-only login; add athens.warewave.io/readonly-secret or athens.warewave.io/readonly-provision"
+      ],
+      "access": {
+        "grants": [
+          {
+            "group": "developers",
+            "level": "read"
+          },
+          {
+            "group": "dbas",
+            "level": "write"
+          }
+        ]
+      }
+    }
+  ],
+  "problems": null
+}

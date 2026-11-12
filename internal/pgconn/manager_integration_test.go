@@ -76,66 +76,71 @@ func TestApplicationNameAndGuards(t *testing.T) {
 func TestReadOnlyEnforced(t *testing.T) {
 	each(t, func(t *testing.T, in *pgtest.Instance) {
 		tg, client := in.Target("ro")
-		noRO := tg
-		noRO.RO = nil // force rw credential + READ ONLY tx
-		m := in.Manager(noRO, client, pgtest.Limits())
+		m := in.Manager(tg, client, pgtest.Limits())
 		defer m.CloseAll()
-		err := m.Run(context.Background(), pgtest.Req(noRO, "app", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, "CREATE TABLE should_fail(id int)")
-			return err
-		})
+		create := func(m *athenspg.Manager, req athenspg.Request) error {
+			return m.Run(context.Background(), req, func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, "CREATE TABLE should_fail(id int)")
+				return err
+			})
+		}
 		var pe *pgconn.PgError
-		if !errors.As(err, &pe) || pe.Code != "25006" {
+		if err := create(m, pgtest.Req(tg, "app", authz.Read)); !errors.As(err, &pe) || pe.Code != "25006" {
 			t.Fatalf("want read_only_sql_transaction, got %v", err)
 		}
 		// write level with ReadOnly flag (catalog path) is read-only too
-		req := pgtest.Req(noRO, "app", authz.Write)
+		req := pgtest.Req(tg, "app", authz.Write)
 		req.ReadOnly = true
-		err = m.Run(context.Background(), req, func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, "CREATE TABLE should_fail(id int)")
-			return err
-		})
-		if !errors.As(err, &pe) || pe.Code != "25006" {
+		if err := create(m, req); !errors.As(err, &pe) || pe.Code != "25006" {
 			t.Fatalf("ReadOnly flag: got %v", err)
+		}
+		// no read-only login: read users never reach the server (ADR-028)
+		noRO := tg
+		noRO.RO = nil
+		if err := create(m, pgtest.Req(noRO, "app", authz.Read)); !errors.Is(err, athenspg.ErrReadLoginRequired) {
+			t.Fatalf("without a read-only login: %v", err)
 		}
 	})
 }
 
-func TestROCredentialUsedAndFallback(t *testing.T) {
+// TestROCredentialNoFallback: read users use the read-only login; a rejected
+// one is an error and an admin warning, never a fallback to the RW login, and
+// it does not mark the target unreachable (ADR-028).
+func TestROCredentialNoFallback(t *testing.T) {
 	each(t, func(t *testing.T, in *pgtest.Instance) {
 		tg, client := in.Target("rocred")
+		user := func(m *athenspg.Manager, tg discovery.Target, level authz.Level) (string, error) {
+			var u string
+			err := m.Run(context.Background(), pgtest.Req(tg, "app", level), func(ctx context.Context, tx pgx.Tx) error {
+				return tx.QueryRow(ctx, "SELECT session_user").Scan(&u)
+			})
+			return u, err
+		}
 		m := in.Manager(tg, client, pgtest.Limits())
 		defer m.CloseAll()
-		user := func(level authz.Level) string {
-			var u string
-			if err := m.Run(context.Background(), pgtest.Req(tg, "app", level), func(ctx context.Context, tx pgx.Tx) error {
-				return tx.QueryRow(ctx, "SELECT current_user").Scan(&u)
-			}); err != nil {
-				t.Fatal(err)
-			}
-			return u
+		if u, err := user(m, tg, authz.Read); err != nil || u != pgtest.ROUser {
+			t.Fatalf("read user = %s %v", u, err)
 		}
-		if u := user(authz.Read); u != pgtest.ROUser {
-			t.Fatalf("read user = %s", u)
+		if u, err := user(m, tg, authz.Write); err != nil || u != "postgres" {
+			t.Fatalf("write user = %s %v", u, err)
 		}
-		if u := user(authz.Write); u != "postgres" {
-			t.Fatalf("write user = %s", u)
-		}
-		// break the RO secret: read falls back to rw + READ ONLY
+		// break the RO secret: read users get an error, not the RW login
 		bad := tg
 		ro := discovery.CredentialRef{User: tg.RO.User, Password: discovery.ValueSource{Secret: &discovery.KeyRef{Name: "rocred-rw", Key: "username"}}}
 		bad.RO = &ro
 		m2 := in.Manager(bad, client, pgtest.Limits())
 		defer m2.CloseAll()
-		var u string
-		if err := m2.Run(context.Background(), pgtest.Req(bad, "app", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
-			// session_user is the login; current_user may be the read-only role (ADR-026)
-			return tx.QueryRow(ctx, "SELECT session_user").Scan(&u)
-		}); err != nil {
-			t.Fatal(err)
+		if u, err := user(m2, bad, authz.Read); !errors.Is(err, athenspg.ErrReadLoginUnavailable) {
+			t.Fatalf("rejected read-only login: user=%q err=%v", u, err)
 		}
-		if u != "postgres" || !m2.ROFallback(bad.ID) {
-			t.Fatalf("fallback user=%s flag=%v", u, m2.ROFallback(bad.ID))
+		if !m2.ROFailed(bad.ID) {
+			t.Fatal("ROFailed not set")
+		}
+		if u, err := user(m2, bad, authz.Write); err != nil || u != "postgres" {
+			t.Fatalf("writers unaffected: %s %v", u, err)
+		}
+		if s := m2.Status(bad.ID); s != "ok" {
+			t.Fatalf("status %s", s)
 		}
 	})
 }
@@ -402,84 +407,176 @@ func TestMissingDefaultDatabase(t *testing.T) {
 	}
 }
 
-// TestReadRoleWithoutROLogin: read users on the RW (superuser) login switch
-// to pg_read_all_data on PostgreSQL 14+, or to the annotated readonly-role;
-// without a usable role they stay on the RW login in READ ONLY mode (ADR-026).
-func TestReadRoleWithoutROLogin(t *testing.T) {
-	q := func(m *athenspg.Manager, tg discovery.Target, level authz.Level, sql string) (string, error) {
+// TestProvisionedLogin (ADR-028): readonly-provision creates an unprivileged
+// athens_read login over the RW login, rotates its password when athens
+// restarts, and never takes over a role it does not manage.
+func TestProvisionedLogin(t *testing.T) {
+	ctx := context.Background()
+	q := func(m *athenspg.Manager, tg discovery.Target, db string, level authz.Level, sql string) (string, error) {
 		var out string
-		err := m.Run(context.Background(), pgtest.Req(tg, "app", level), func(ctx context.Context, tx pgx.Tx) error {
+		err := m.Run(ctx, pgtest.Req(tg, db, level), func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, sql).Scan(&out)
 		})
 		return out, err
 	}
 	pg16 := instances[0]
-	tg, client := pg16.Target("norologin")
-	tg.RO = nil
+	tg, client := pg16.Target("provision")
+	tg.RO, tg.ROProvision = nil, true
 	m := pg16.Manager(tg, client, pgtest.Limits())
 	defer m.CloseAll()
 
-	if u, err := q(m, tg, authz.Read, "SELECT current_user"); err != nil || u != "pg_read_all_data" {
-		t.Fatalf("read user = %q %v", u, err)
+	if u, err := q(m, tg, "app", authz.Read, "SELECT session_user || '/' || current_user"); err != nil || u != "athens_read/athens_read" {
+		t.Fatalf("read login = %q %v", u, err)
 	}
-	if role, checked := m.ReadRole(tg.ID); role != "pg_read_all_data" || !checked {
-		t.Fatalf("ReadRole = %q %v", role, checked)
+	attrs, err := q(m, tg, "app", authz.Read, `SELECT concat_ws(',', rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls,
+		pg_has_role('athens_read', 'pg_read_all_data', 'MEMBER'), shobj_description(oid, 'pg_authid') LIKE 'managed by athens%')
+		FROM pg_roles WHERE rolname = 'athens_read'`)
+	if err != nil || attrs != "f,f,f,f,f,t,t" {
+		t.Fatalf("role attributes = %q %v", attrs, err)
 	}
-	if _, err := q(m, tg, authz.Read, "SELECT count(*)::text FROM pg_class"); err != nil {
-		t.Fatalf("catalog read: %v", err)
-	}
-	// superuser-only functions are gone with the role switch (pg_authid stays
-	// readable for pg_read_all_data; sqlclass refuses it, see sqlclass tests)
-	for _, sql := range []string{"SELECT pg_read_file('PG_VERSION')", "SELECT pg_ls_dir('.')::text"} {
-		if _, err := q(m, tg, authz.Read, sql); err == nil {
-			t.Errorf("%s must be denied for read users", sql)
-		}
-	}
-	if u, err := q(m, tg, authz.Write, "SELECT current_user"); err != nil || u != "postgres" {
-		t.Fatalf("write user = %q %v", u, err)
-	}
-
-	// an annotated NOLOGIN role the RW login may switch to
-	if err := m.Run(context.Background(), pgtest.Req(tg, "app", authz.Write), func(ctx context.Context, tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `CREATE ROLE athens_reader NOLOGIN; GRANT pg_read_all_data TO athens_reader`)
+	if err := m.Run(ctx, pgtest.Req(tg, "app", authz.Write), func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "CREATE TABLE prov_t AS SELECT 1 AS id, 'a' AS name")
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
-	custom := tg
-	custom.ReadOnlyRole = "athens_reader"
-	m2 := pg16.Manager(custom, client, pgtest.Limits())
-	defer m2.CloseAll()
-	if u, err := q(m2, custom, authz.Read, "SELECT current_user"); err != nil || u != "athens_reader" {
-		t.Fatalf("custom role user = %q %v", u, err)
+	if n, err := q(m, tg, "app", authz.Read, "SELECT count(*)::text FROM prov_t"); err != nil || n != "1" {
+		t.Fatalf("data read: %q %v", n, err)
+	}
+	for _, sql := range []string{"SELECT pg_read_file('PG_VERSION')", "SELECT pg_ls_dir('.')::text"} {
+		if _, err := q(m, tg, "app", authz.Read, sql); err == nil {
+			t.Errorf("%s must be denied for read users", sql)
+		}
+	}
+	if _, err := q(m, tg, "app", authz.Read, "UPDATE prov_t SET name = name RETURNING 'x'"); err == nil {
+		t.Fatal("read users must not write")
+	}
+	if u, err := q(m, tg, "app", authz.Write, "SELECT session_user"); err != nil || u != "postgres" {
+		t.Fatalf("write user = %q %v", u, err)
+	}
+	if msg := m.ProvisionError(tg.ID); msg != "" {
+		t.Fatalf("ProvisionError = %q", msg)
 	}
 
-	// a role that does not exist: no switch, READ ONLY still holds, admins are told
-	missing := tg
-	missing.ReadOnlyRole = "no_such_role"
-	m3 := pg16.Manager(missing, client, pgtest.Limits())
+	// a restarted athens sets a new password; the old manager's new
+	// connections fail once, re-provision and carry on
+	m2 := pg16.Manager(tg, client, pgtest.Limits())
+	defer m2.CloseAll()
+	if u, err := q(m2, tg, "app", authz.Read, "SELECT session_user"); err != nil || u != "athens_read" {
+		t.Fatalf("after restart: %q %v", u, err)
+	}
+	m.CloseAll()
+	if u, err := q(m, tg, "postgres", authz.Read, "SELECT session_user"); err != nil || u != "athens_read" {
+		t.Fatalf("stale password not recovered: %q %v", u, err)
+	}
+
+	// an RW login that may not create roles: setup fails, writers carry on
+	admin, err := pg16.Connect(ctx, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = admin.Close(ctx) }()
+	if _, err := admin.Exec(ctx, "CREATE ROLE zweak LOGIN PASSWORD 'zweak-pw'; GRANT CONNECT ON DATABASE app TO zweak"); err != nil {
+		t.Fatal(err)
+	}
+	weak, weakClient := pg16.Target("provision-weak")
+	if _, err := weakClient.CoreV1().Secrets(pgtest.Namespace).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "zweak", Namespace: pgtest.Namespace},
+		Data: map[string][]byte{"username": []byte("zweak"), "password": []byte("zweak-pw")}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	weak.RW = discovery.CredentialRef{
+		User:     discovery.ValueSource{Secret: &discovery.KeyRef{Name: "zweak", Key: "username"}},
+		Password: discovery.ValueSource{Secret: &discovery.KeyRef{Name: "zweak", Key: "password"}},
+	}
+	weak.RO, weak.ROProvision = nil, true
+	m3 := pg16.Manager(weak, weakClient, pgtest.Limits())
 	defer m3.CloseAll()
-	if u, err := q(m3, missing, authz.Read, "SELECT current_user"); err != nil || u != "postgres" {
-		t.Fatalf("missing role user = %q %v", u, err)
+	if _, err := q(m3, weak, "app", authz.Read, "SELECT 1::text"); !errors.Is(err, athenspg.ErrReadLoginUnavailable) {
+		t.Fatalf("weak RW login: %v", err)
 	}
-	if role, checked := m3.ReadRole(missing.ID); role != "" || !checked {
-		t.Fatalf("ReadRole = %q %v", role, checked)
+	if msg := m3.ProvisionError(weak.ID); !strings.Contains(msg, "may not create or update") {
+		t.Fatalf("ProvisionError = %q", msg)
 	}
-	if _, err := q(m3, missing, authz.Read, "UPDATE shop.customers SET name = name RETURNING 'x'"); err == nil {
-		t.Fatal("READ ONLY must still apply without a role")
+	if _, err := q(m3, weak, "app", authz.Write, "SELECT 1::text"); err != nil || m3.Status(weak.ID) != "ok" {
+		t.Fatalf("writers on the weak login: %v %s", err, m3.Status(weak.ID))
+	}
+
+	// a role named athens_read that athens did not create is left alone
+	if _, err := admin.Exec(ctx, "COMMENT ON ROLE athens_read IS 'someone else'"); err != nil {
+		t.Fatal(err)
+	}
+	m4 := pg16.Manager(tg, client, pgtest.Limits())
+	defer m4.CloseAll()
+	if _, err := q(m4, tg, "app", authz.Read, "SELECT 1::text"); !errors.Is(err, athenspg.ErrReadLoginUnavailable) {
+		t.Fatalf("unmanaged role: %v", err)
+	}
+	if msg := m4.ProvisionError(tg.ID); !strings.Contains(msg, "not managed by athens") {
+		t.Fatalf("ProvisionError = %q", msg)
+	}
+	if s := m4.Status(tg.ID); s == "unreachable" {
+		t.Fatalf("status %s", s)
+	}
+	var comment string
+	if err := admin.QueryRow(ctx, "SELECT shobj_description(oid, 'pg_authid') FROM pg_roles WHERE rolname = 'athens_read'").Scan(&comment); err != nil || comment != "someone else" {
+		t.Fatalf("unmanaged role touched: %q %v", comment, err)
+	}
+
+	// a main login that is not a superuser but may create roles (managed
+	// services): the first start creates the role, a restart only resets
+	// the password
+	for _, sql := range []string{
+		"DROP ROLE athens_read",
+		"CREATE ROLE zcr LOGIN CREATEROLE PASSWORD 'zcr-pw'",
+		"GRANT pg_read_all_data TO zcr WITH ADMIN OPTION",
+		"GRANT CONNECT ON DATABASE app TO zcr",
+	} {
+		if _, err := admin.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	cr, crClient := pg16.Target("provision-cr")
+	if _, err := crClient.CoreV1().Secrets(pgtest.Namespace).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "zcr", Namespace: pgtest.Namespace},
+		Data: map[string][]byte{"username": []byte("zcr"), "password": []byte("zcr-pw")}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	cr.RW = discovery.CredentialRef{
+		User:     discovery.ValueSource{Secret: &discovery.KeyRef{Name: "zcr", Key: "username"}},
+		Password: discovery.ValueSource{Secret: &discovery.KeyRef{Name: "zcr", Key: "password"}},
+	}
+	cr.RO, cr.ROProvision = nil, true
+	for i := range 2 {
+		mc := pg16.Manager(cr, crClient, pgtest.Limits())
+		u, err := q(mc, cr, "app", authz.Read, "SELECT session_user")
+		mc.CloseAll()
+		if err != nil || u != "athens_read" {
+			t.Fatalf("CREATEROLE main login, start %d: %q %v (%s)", i+1, u, err, mc.ProvisionError(cr.ID))
+		}
+	}
+
+	// extra rights granted to the managed role make athens stop using it
+	if _, err := admin.Exec(ctx, "GRANT pg_write_all_data TO athens_read"); err != nil {
+		t.Fatal(err)
+	}
+	m6 := pg16.Manager(tg, client, pgtest.Limits())
+	defer m6.CloseAll()
+	if _, err := q(m6, tg, "app", authz.Read, "SELECT 1::text"); !errors.Is(err, athenspg.ErrReadLoginUnavailable) {
+		t.Fatalf("role with extra membership: %v", err)
+	}
+	if msg := m6.ProvisionError(tg.ID); !strings.Contains(msg, "beyond LOGIN and pg_read_all_data") {
+		t.Fatalf("ProvisionError = %q", msg)
 	}
 
 	// PostgreSQL 13 has no pg_read_all_data
 	pg13 := instances[1]
-	tg13, client13 := pg13.Target("norologin13")
-	tg13.RO = nil
-	m4 := pg13.Manager(tg13, client13, pgtest.Limits())
-	defer m4.CloseAll()
-	if u, err := q(m4, tg13, authz.Read, "SELECT current_user"); err != nil || u != "postgres" {
-		t.Fatalf("pg13 read user = %q %v", u, err)
+	tg13, client13 := pg13.Target("provision13")
+	tg13.RO, tg13.ROProvision = nil, true
+	m5 := pg13.Manager(tg13, client13, pgtest.Limits())
+	defer m5.CloseAll()
+	if _, err := q(m5, tg13, "app", authz.Read, "SELECT 1::text"); !errors.Is(err, athenspg.ErrReadLoginUnavailable) {
+		t.Fatalf("pg13: %v", err)
 	}
-	if role, checked := m4.ReadRole(tg13.ID); role != "" || !checked {
-		t.Fatalf("pg13 ReadRole = %q %v", role, checked)
+	if msg := m5.ProvisionError(tg13.ID); !strings.Contains(msg, "PostgreSQL 14") {
+		t.Fatalf("pg13 ProvisionError = %q", msg)
 	}
 }
 
@@ -525,11 +622,10 @@ func TestDatabaseScopedErrors(t *testing.T) {
 	}
 }
 
-// TestPrivilegedLogins (ADR-027): a login that is a member of a superuser or
-// monitoring role counts as privileged; read users get neither editor SQL
-// nor (without a usable read role) grid rows there. Unprivileged logins keep
-// working.
-func TestPrivilegedLogins(t *testing.T) {
+// TestPrivilegedROLogins (ADR-027, ADR-028): a read-only login that is a
+// member of a superuser or monitoring role is refused for read users;
+// unprivileged logins keep working, and a later GRANT is seen at once.
+func TestPrivilegedROLogins(t *testing.T) {
 	in := instances[0]
 	ctx := context.Background()
 	admin, err := in.Connect(ctx, "postgres")
@@ -548,55 +644,46 @@ func TestPrivilegedLogins(t *testing.T) {
 	}
 	login := func(user string) (*athenspg.Manager, discovery.Target) {
 		tg, client := in.Target("priv-" + user)
-		tg.RO = nil
 		sec := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: user, Namespace: pgtest.Namespace},
 			Data: map[string][]byte{"username": []byte(user), "password": []byte(user + "-pw")}}
 		if _, err := client.CoreV1().Secrets(pgtest.Namespace).Create(ctx, sec, metav1.CreateOptions{}); err != nil {
 			t.Fatal(err)
 		}
-		tg.RW = discovery.CredentialRef{
+		tg.RO = &discovery.CredentialRef{
 			User:     discovery.ValueSource{Secret: &discovery.KeyRef{Name: user, Key: "username"}},
 			Password: discovery.ValueSource{Secret: &discovery.KeyRef{Name: user, Key: "password"}},
 		}
 		return in.Manager(tg, client, pgtest.Limits()), tg
 	}
-	run := func(m *athenspg.Manager, tg discovery.Target, sql, data bool) error {
-		req := pgtest.Req(tg, "app", authz.Read)
-		req.UserSQL, req.UserData = sql, data
-		return m.Run(ctx, req, func(ctx context.Context, tx pgx.Tx) error {
+	run := func(m *athenspg.Manager, tg discovery.Target) error {
+		return m.Run(ctx, pgtest.Req(tg, "app", authz.Read), func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "SELECT 1")
 			return err
 		})
 	}
 	for _, user := range []string{"zmember", "zmon"} {
 		m, tg := login(user)
-		if err := run(m, tg, true, false); !errors.Is(err, athenspg.ErrReadLoginRequired) {
-			t.Errorf("%s editor: %v", user, err)
+		if err := run(m, tg); !errors.Is(err, athenspg.ErrReadLoginPrivileged) {
+			t.Errorf("%s: %v", user, err)
 		}
-		if err := run(m, tg, false, true); !errors.Is(err, athenspg.ErrReadLoginRequired) {
-			t.Errorf("%s grid without a usable read role: %v", user, err)
-		}
-		if err := run(m, tg, false, false); err != nil {
-			t.Errorf("%s catalog: %v", user, err)
-		}
-		if !m.PrivilegedRW(tg.ID) {
+		if !m.PrivilegedRO(tg.ID) {
 			t.Errorf("%s not reported as privileged", user)
 		}
 		m.CloseAll()
 	}
 	m, tg := login("zplain")
 	defer m.CloseAll()
-	if err := run(m, tg, true, true); err != nil {
+	if err := run(m, tg); err != nil {
 		t.Fatalf("unprivileged login: %v", err)
 	}
-	if m.PrivilegedRW(tg.ID) {
+	if m.PrivilegedRO(tg.ID) {
 		t.Fatal("zplain reported as privileged")
 	}
 	// a privilege granted later is seen by the next transaction
 	if _, err := admin.Exec(ctx, "GRANT postgres TO zplain"); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(m, tg, true, false); !errors.Is(err, athenspg.ErrReadLoginRequired) {
+	if err := run(m, tg); !errors.Is(err, athenspg.ErrReadLoginPrivileged) {
 		t.Fatalf("after GRANT postgres: %v", err)
 	}
 }

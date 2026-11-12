@@ -14,13 +14,15 @@ header (SPEC §5.4). A target is addressed by two path segments `{ns}/{name}`
 |---|---|---|
 | 400 | `bad_request`, `syntax_error`, `multiple_statements`, `unsupported_statement`, `invalid_filter` | |
 | 401 | `unauthenticated` | no/expired session → SPA redirects to login |
-| 403 | `csrf`, `forbidden`, `forbidden_statement`, `not_editable` | |
+| 403 | `csrf`, `forbidden`, `forbidden_statement`, `not_editable`, `database_denied` | |
+| 403 | `read_login_privileged` | read user on a target whose read-only login is a superuser or similar (ADR-028) |
 | 404 | `not_found` | also used for targets/dbs the user can't see |
 | 409 | `confirmation_required`, `row_conflict` | |
 | 413 | `too_large` | |
 | 422 | `db_error` | Postgres error from user's own statement: `details = {sqlstate, message, detail, hint, position, line, column}` |
 | 429 | `too_many_queries` | |
 | 502 | `target_unavailable` | connect/auth failure (generic message) |
+| 503 | `read_login_unavailable` | read user; the read-only login was rejected or `readonly-provision` could not set it up (reason on Admin → Discovery) |
 | 504 | `timeout` | statement_timeout hit (SQLSTATE 57014 not from user cancel) |
 
 ## Auth (outside /api)

@@ -27,6 +27,7 @@ metadata:
   annotations:
     athens.warewave.io/enabled: "true"
     athens.warewave.io/access: "orders-team:rw, analysts:ro"
+    athens.warewave.io/readonly-provision: "true"   # athens creates the read-only login analysts use
 spec:
   serviceName: orders-db
   selector:

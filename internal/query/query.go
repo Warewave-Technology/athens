@@ -167,7 +167,7 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 	// cannot see into: run it READ ONLY unless confirmed (ADR-027).
 	readOnlyProbe := in.Level == authz.Write && cls.Class == sqlclass.Read && !in.Confirm
 	err = s.Pools.Run(qctx, pgconn.Request{
-		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true, UserSQL: true,
+		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true,
 		ReadOnly: readOnlyProbe, Notices: &out.Notices,
 	}, func(ctx context.Context, tx pgx.Tx) error {
 		// Rows changed by this statement, including writable CTEs, EXPLAIN

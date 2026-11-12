@@ -249,6 +249,7 @@ darker aqua (`#376a4b`) so cream labels pass WCAG AA (5.6:1); dark mode puts
 brand logo are unchanged. Supersedes the palette part of ADR-019.
 
 ## ADR-026 Read-only role without a read-only login
+*Superseded by ADR-028.*
 Many databases have no read-only login, and env-discovered ones usually run
 on the `postgres` superuser. READ ONLY transactions plus statement
 classification stop writes, but read users still carried the superuser's
@@ -370,3 +371,68 @@ scope it), the same per namespace in namespaced mode, the ghcr.io registry
 warning and the Dockerfile HEALTHCHECK rule (Kubernetes probes are used).
 Info: the audit identity shown is the `email` claim; filtering by user ID
 is exact.
+
+## ADR-028 Read users connect only with a read-only login
+ADR-026/027 let read users run on the main login under `SET LOCAL ROLE`.
+On a privileged login that is not a boundary (any dynamic-SQL function can
+reset the role), it needed a cascade of special cases (editor refused, grid
+refused unless the role was usable, warn-only on unprivileged logins), and
+on an unprivileged login read users still had the owner's privileges minus
+what READ ONLY stops. → Read users never use the main login:
+- They connect with an RO login only: `readonly-secret`, or, new,
+  `readonly-provision: "true"`. With both, the Secret wins (warning).
+- With neither, `authz.Level` yields `none` for a would-be `read` (the
+  target is 404 for read users; writers are unaffected), and discovery warns
+  "read users cannot connect" when the access list grants `ro` or the target
+  is `readonly` (owner's decision: they cannot connect, no fallback).
+- A rejected or unreadable RO login is an error for read users
+  (`read_login_unavailable`, 503) and an admin warning; it never falls back
+  to RW. Only RW connections and the RW health check set the target status.
+- pgconn fails closed: a request with level none is refused, only level
+  write uses RW.
+- The RO login is checked in every read transaction and refused when
+  privileged (ADR-027's definition): 403 `read_login_privileged`.
+- `readonly-role`, the role switch and the editor/grid special cases are
+  removed (`read_login_required` stays as a defensive error only).
+
+`readonly-provision` creates the login so owners need no Secret: on the
+first read pool athens connects with the RW login and, in one transaction,
+checks PostgreSQL ≥ 14, then `CREATE ROLE athens_read WITH LOGIN NOSUPERUSER
+NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD
+'<SCRAM-SHA-256 verifier>'`, a marker `COMMENT`, and `GRANT
+pg_read_all_data`. An existing marked role only gets `ALTER ROLE ... WITH
+LOGIN PASSWORD` (naming SUPERUSER/REPLICATION/BYPASSRLS at all, even as NO,
+needs a superuser, and managed-service main logins only have CREATEROLE).
+Before commit the role is checked: any other attribute or any membership
+besides `pg_read_all_data` aborts the setup. The transaction runs with the
+usual application_name and timeouts, under a per-target lock. The password
+is 32 random bytes, kept only in memory and sent only as a verifier
+(PBKDF2-SHA256, 4096 iterations, random salt), so it never reaches a Secret,
+the store or logs (the server's DDL log may show the verifier, which does
+not help to log in). It is replaced at every athens start and after an
+authentication failure of a pool built on the current password; a pool on
+an older one just takes the current password (generation counter), so pools
+of one target never replace each other's password. An `athens_read` role
+without the marker is never changed. Setup errors are read-user errors with
+an admin-visible reason, not target errors.
+
+Residual, accepted:
+- `pg_read_all_data` can read `pg_authid`; athens refuses the credential
+  catalogs in the editor and the grid (ADR-026/027), but a user-defined
+  function in the database that runs dynamic SQL could still read them.
+  Owners who care use a narrower `readonly-secret` login.
+- Roles are server-wide: two athens installations provisioning the same
+  server replace each other's password (each recovers by re-provisioning,
+  at the cost of the other's open connections). Run one athens per server,
+  or use `readonly-secret`.
+- Provisioning requires the RW login to create roles; RW logins that may do
+  so are privileged by nature, which is why read users never use them.
+- The marker comment can be forged by anyone with CREATEROLE; such a role
+  is used only if it has nothing beyond LOGIN and pg_read_all_data.
+
+An independent review of this change found, and it fixes before release:
+ALTER with NO... attributes failing for CREATEROLE main logins, pools of one
+target re-provisioning against each other, the fallback-database path
+forcing a new password, RO errors and an RO health check changing the
+target status, a single global provisioning lock without timeouts, and a
+missing level failing open in pgconn.

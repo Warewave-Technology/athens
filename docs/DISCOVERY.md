@@ -135,7 +135,7 @@ On a StatefulSet, Deployment or Service:
 | `user` | no | fixed user if secret has no user key |
 | `readonly-secret` | no | (enables RO credential) |
 | `readonly-user-key` / `readonly-password-key` | no | `username` / `password` |
-| `readonly-role` | no | role read users switch to without RO login; default `pg_read_all_data` (§5) |
+| `readonly-provision` | no | `"true"`: athens creates and manages the RO login `athens_read` (§5); ignored with a warning when `readonly-secret` is set |
 | `database` | no | env, else user name; `postgres` if that does not exist |
 | `display-name` | no | name |
 | `environment` | no | `""` |
@@ -228,19 +228,34 @@ Among Services in the namespace:
 Host uses `discovery.clusterDomain` (default `cluster.local`) only when
 `discovery.useFQDN` is true; default short form `<svc>.<ns>.svc`.
 
-## 5. Read-only credentials and role
-`RO` is set when an annotation (`readonly-secret`) exists on the workload/CR/
-Service. Pool manager uses RO for users whose effective level is `read`.
-If RO auth fails, fall back to RW + READ ONLY tx and add a target warning.
+## 5. Read-only credentials (ADR-028)
+Read users only ever connect with an RO login; the pool manager uses it for
+users whose effective level is `read`. Writers use RW.
 
-Read users on the RW login (no RO, or RO rejected) switch roles in every
-transaction with `SET LOCAL ROLE <role>` (ADR-026). `<role>` is the
-`readonly-role` annotation (`Target.ReadOnlyRole`), else `pg_read_all_data`.
-The first such transaction per target checks inside a savepoint that the
-role exists and `pg_has_role(current_user, role, 'MEMBER')`; the result is
-cached until the target changes (or the role switch later fails). Without a
-usable role the transaction stays on the RW login (READ ONLY) and admins get
-a target warning. Writers never switch roles.
+- `RO` is set when `readonly-secret` exists on the workload/CR/Service.
+- Otherwise `Target.ROProvision` is set by `readonly-provision: "true"`:
+  athens creates the role `athens_read` over the RW login on the first read
+  pool (`CREATE ROLE ... LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '<SCRAM verifier>'`, a marker
+  comment, `GRANT pg_read_all_data`) in one guarded transaction; later runs
+  `ALTER ROLE ... WITH LOGIN PASSWORD '<verifier>'` only. The transaction is
+  refused if the role then has any other attribute or membership.
+  PostgreSQL 14+ only. The password is random, held in memory, never
+  stored; it is replaced at every athens start and after an authentication
+  failure of a pool that used the current password (a generation counter
+  keeps pools of one target from replacing each other's password). An
+  existing `athens_read` without the marker comment is never changed.
+- With neither, `authz.Level` returns `none` instead of `read` for the
+  target (it is invisible to read users) and discovery adds the warning
+  "read users cannot connect" when the access list grants `ro` or the target
+  is `readonly`.
+- No fallback: a rejected or unreadable RO login, or a failed provisioning,
+  is an error for read users (`read_login_unavailable`) and an admin
+  warning. Only RW connections (and the RW health check) set the target
+  status.
+- Every read transaction checks that the RO login is not privileged
+  (superuser, REPLICATION, BYPASSRLS, or member of such a role or of
+  pg_monitor-like roles); if it is, read users get `read_login_privileged`.
 
 ## 6. Test fixtures (fake clientset), one file each in `internal/discovery/testdata/`
 Every workload and operator resource in the fixtures is annotated

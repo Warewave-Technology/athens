@@ -263,23 +263,68 @@ func TestHistorySavedDrafts(t *testing.T) {
 	_ = context.Background
 }
 
+// TestReadLogins (ADR-028): read users only ever use a read-only login. A
+// target without one is invisible to them; a provisioned one works; a
+// privileged one is refused.
+func TestReadLogins(t *testing.T) {
+	in := instances[0]
+
+	h, _ := dbHarness(t, in, func(tg *discovery.Target) { tg.RO = nil })
+	rd := h.login("r@example.com", "readers")
+	var list struct{ Targets []struct{ ID string } }
+	rd.get("/api/v1/targets").json(t, &list)
+	if len(list.Targets) != 0 {
+		t.Fatalf("target without a read-only login listed for read users: %+v", list.Targets)
+	}
+	if r := run(rd, "select 1", nil); r.status != 404 {
+		t.Fatalf("editor without a read-only login: %d %s", r.status, r.body)
+	}
+	if _, r := gridQuery(t, rd, "shop/customers", map[string]any{"limit": 3}); r.status != 404 {
+		t.Fatalf("grid without a read-only login: %d %s", r.status, r.body)
+	}
+	if r := run(h.login("w@example.com", "writers"), "select 1", nil); r.status != 200 {
+		t.Fatalf("writers unaffected: %d %s", r.status, r.body)
+	}
+
+	hp, _ := dbHarness(t, in, func(tg *discovery.Target) { tg.RO, tg.ROProvision = nil, true })
+	rp := hp.login("r@example.com", "readers")
+	r := run(rp, "select session_user", nil)
+	if r.status != 200 || !strings.Contains(string(r.body), `"athens_read"`) {
+		t.Fatalf("provisioned login: %d %s", r.status, r.body)
+	}
+	if _, r := gridQuery(t, rp, "shop/customers", map[string]any{"limit": 3}); r.status != 200 {
+		t.Fatalf("grid on the provisioned login: %d %s", r.status, r.body)
+	}
+	if r := run(rp, "update shop.orders set status = 'paid' where id = 1", nil); r.status != 403 {
+		t.Fatalf("write on the provisioned login: %d", r.status)
+	}
+	// pg_read_all_data may read pg_authid; athens never lets it through
+	if r := run(rp, "select rolpassword from pg_authid", nil); r.status != 400 || r.errCode() != "unsupported_statement" {
+		t.Fatalf("pg_authid on the provisioned login: %d %s", r.status, r.body)
+	}
+	if _, r := gridQuery(t, rp, "pg_catalog/pg_authid", map[string]any{"limit": 5}); r.status != 404 {
+		t.Fatalf("grid pg_authid on the provisioned login: %d %s", r.status, r.body)
+	}
+
+	// a read-only login that is a superuser is refused, admins are told
+	hs, _ := dbHarness(t, in, func(tg *discovery.Target) { ro := tg.RW; tg.RO = &ro })
+	rs := hs.login("r@example.com", "readers")
+	if r := run(rs, "select 1", nil); r.status != 403 || r.errCode() != "read_login_privileged" {
+		t.Fatalf("privileged read-only login: %d %s", r.status, r.body)
+	}
+	var adminList struct{ Targets []struct{ Warnings []string } }
+	hs.login("a@example.com", "admins", "writers").get("/api/v1/targets").json(t, &adminList)
+	if len(adminList.Targets) != 1 || !strings.Contains(strings.Join(adminList.Targets[0].Warnings, "|"), "read-only login is privileged") {
+		t.Fatalf("admin warning: %+v", adminList.Targets)
+	}
+}
+
 // TestEditorSecurityBoundaries (ADR-027).
 func TestEditorSecurityBoundaries(t *testing.T) {
 	in := instances[0]
 
-	// read users on a superuser login without a read-only login: no SQL
-	// editor (a role switch is escapable there), the grid still works
-	h, _ := dbHarness(t, in, func(tg *discovery.Target) { tg.RO = nil })
-	rd := h.login("r@example.com", "readers")
-	if r := run(rd, "select 1", nil); r.status != 403 || r.errCode() != "read_login_required" {
-		t.Fatalf("editor on privileged login: %d %s", r.status, r.body)
-	}
-	if _, r := gridQuery(t, rd, "shop/customers", map[string]any{"limit": 3}); r.status != 200 {
-		t.Fatalf("grid on privileged login: %d %s", r.status, r.body)
-	}
-
 	// dynamic SQL and server functions are never reads
-	h2, _ := dbHarness(t, in, nil) // read users have the read-only login here
+	h2, _ := dbHarness(t, in, nil)
 	rd2 := h2.login("r@example.com", "readers")
 	for _, sql := range []string{
 		"select query_to_xml('select set_config(''role'',''none'',true)',true,true,'')",

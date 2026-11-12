@@ -49,15 +49,21 @@ func (s *Server) mapDBError(err error, sql string) error {
 	case errors.As(err, &ue):
 		s.Log.Warn("target unavailable", "err", ue.Cause)
 		return errTargetUnavailable
-	case errors.Is(err, pgconn.ErrNoDatabase):
+	case errors.Is(err, pgconn.ErrNoDatabase), errors.Is(err, pgconn.ErrNoAccess):
 		return httpx.ErrNotFound
 	case errors.Is(err, pgconn.ErrDatabaseDenied):
 		return httpx.NewError(http.StatusForbidden, "database_denied", "the server does not allow connections to this database")
 	case errors.Is(err, pgconn.ErrReadLoginRequired):
 		return httpx.NewError(http.StatusForbidden, "read_login_required",
-			"read access to this database needs a read-only login: athens connects with a privileged login (superuser or similar), "+
-				"so read users cannot run SQL here (nor read rows when no read-only role is usable). "+
-				"Ask the database owners to add the athens.warewave.io/readonly-secret annotation")
+			"read access to this database needs a read-only login; ask the database owners to add the "+
+				"athens.warewave.io/readonly-secret or athens.warewave.io/readonly-provision annotation")
+	case errors.Is(err, pgconn.ErrReadLoginPrivileged):
+		return httpx.NewError(http.StatusForbidden, "read_login_privileged",
+			"the read-only login of this database is privileged (superuser or similar), so read users are refused; "+
+				"ask the database owners to use an unprivileged read-only login")
+	case errors.Is(err, pgconn.ErrReadLoginUnavailable):
+		return httpx.NewError(http.StatusServiceUnavailable, "read_login_unavailable",
+			"the read-only login of this database could not be set up or was rejected; administrators see why on the Discovery page")
 	case errors.Is(err, pgconn.ErrTimeout):
 		return errTimeout
 	case errors.Is(err, pgconn.ErrCancelled), errors.Is(err, context.Canceled):
@@ -117,14 +123,6 @@ func (s *Server) dbReq(r *http.Request, t discovery.Target, db string, lvl authz
 	return pgconn.Request{Target: t, Database: db, Level: lvl, Email: reqctx.UserFrom(r.Context()).Email, ReadOnly: true}
 }
 
-// dataReq is dbReq for reads of table rows (grid): refused for read users on
-// a privileged login without a usable read-only role (ADR-027).
-func (s *Server) dataReq(r *http.Request, t discovery.Target, db string, lvl authz.Level) pgconn.Request {
-	req := s.dbReq(r, t, db, lvl)
-	req.UserData = true
-	return req
-}
-
 type targetJSON struct {
 	ID          string   `json:"id"`
 	Namespace   string   `json:"namespace"`
@@ -150,21 +148,15 @@ func (s *Server) listTargets(w http.ResponseWriter, r *http.Request) error {
 			Environment: t.Environment, Level: lvl.String(), Status: s.Pools.Status(t.ID)}
 		if admin {
 			j.Warnings = t.Warnings
-			if s.Pools.ROFallback(t.ID) {
-				j.Warnings = append(j.Warnings, "read-only credential was rejected; using rw credential with READ ONLY transactions")
+			if s.Pools.ROFailed(t.ID) {
+				j.Warnings = append(j.Warnings, "the read-only login (readonly-secret) was rejected or its Secret cannot be read: read users cannot connect")
 			}
-			if s.Pools.PrivilegedRW(t.ID) && t.RO == nil {
-				j.Warnings = append(j.Warnings, "read users cannot use the SQL editor (nor the grid without a usable read-only role): the main login "+
-					"is privileged (superuser, REPLICATION, BYPASSRLS, or member of such a role or of pg_monitor-like roles) "+
-					"and there is no read-only login; add athens.warewave.io/readonly-secret")
+			if s.Pools.PrivilegedRO(t.ID) {
+				j.Warnings = append(j.Warnings, "the read-only login is privileged (superuser, REPLICATION, BYPASSRLS, or member of such a role "+
+					"or of pg_monitor-like roles): read users are refused; point readonly-secret at an unprivileged login")
 			}
-			if role, checked := s.Pools.ReadRole(t.ID); checked && role == "" {
-				want := t.ReadOnlyRole
-				if want == "" {
-					want = "pg_read_all_data"
-				}
-				j.Warnings = append(j.Warnings, fmt.Sprintf("read users run on the main login in READ ONLY transactions: no read-only login, and role %q "+
-					"does not exist or the login cannot switch to it (add athens.warewave.io/readonly-secret or readonly-role)", want))
+			if msg := s.Pools.ProvisionError(t.ID); msg != "" {
+				j.Warnings = append(j.Warnings, msg+": read users cannot connect")
 			}
 			if missing, using := s.Pools.DefaultDBFallback(t.ID); using != "" {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("database %q does not exist; connecting to %q instead (set the athens.warewave.io/database annotation)", missing, using))

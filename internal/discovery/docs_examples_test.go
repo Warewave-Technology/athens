@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Warewave-Technology/athens/internal/config"
@@ -19,7 +20,8 @@ func TestDocsExamples(t *testing.T) {
 		detail string
 	}{
 		{"statefulset-minimal.yaml", func(x Target) bool {
-			return x.ID == "demo/orders-db" && x.Host == "orders-db.demo.svc" && x.Port == 5432 && x.DefaultDB == "orders" && x.RW.Password.Secret != nil
+			return x.ID == "demo/orders-db" && x.Host == "orders-db.demo.svc" && x.Port == 5432 && x.DefaultDB == "orders" && x.RW.Password.Secret != nil &&
+				x.ROProvision
 		}, "env credentials, POSTGRES_DB"},
 		{"deployment-production.yaml", func(x Target) bool {
 			return x.DisplayName == "Billing" && x.Environment == "production" && x.RO != nil && x.DefaultDB == "billing" && x.SSLMode == "require"
@@ -32,10 +34,11 @@ func TestDocsExamples(t *testing.T) {
 				x.RW.Password.Secret.Name == "ledger-owner.acid-ledger.credentials.postgresql.acid.zalan.do"
 		}, "zalando"},
 		{"external-database.yaml", func(x Target) bool {
-			return x.Host == "crm-flexible.demo.svc" && x.SSLMode == "verify-ca" && x.CA != nil && x.CA.Name == "azure-postgres-ca" && x.DefaultDB == "crm"
+			return x.Host == "crm-flexible.demo.svc" && x.SSLMode == "verify-ca" && x.CA != nil && x.CA.Name == "azure-postgres-ca" && x.DefaultDB == "crm" &&
+				x.RO != nil
 		}, "ExternalName service"},
 		{"access-annotations.yaml", func(x Target) bool {
-			return x.ReadOnly && x.ReadOnlyRole == "athens_reader" && x.Access != nil && len(x.Access.Grants) == 2 && x.Access.Grants[0].Group == "system-admins"
+			return x.ReadOnly && x.ROProvision && x.Access != nil && len(x.Access.Grants) == 2 && x.Access.Grants[0].Group == "system-admins"
 		}, "readonly + access"},
 	}
 	for _, tc := range cases {
@@ -46,6 +49,12 @@ func TestDocsExamples(t *testing.T) {
 			}
 			if targets[0].Access == nil || len(targets[0].Access.Grants) == 0 {
 				t.Fatalf("example must carry an access annotation: %+v", targets[0])
+			}
+			// examples granting ro must give read users a read-only login (ADR-028)
+			for _, w := range targets[0].Warnings {
+				if strings.Contains(w, "read users cannot connect") {
+					t.Fatalf("example leaves read users without a login: %s", w)
+				}
 			}
 			if !tc.check(targets[0]) {
 				t.Fatalf("%s: unexpected target %+v", tc.detail, targets[0])

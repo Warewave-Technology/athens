@@ -1,0 +1,146 @@
+# readonly-provision (ADR-028): athens manages the read-only login
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prov
+  uid: uid-prov
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "developers:ro,dbas:rw"
+    athens.warewave.io/readonly-provision: "true"
+spec:
+  serviceName: prov
+  selector: {matchLabels: {app: prov}}
+  template:
+    metadata: {labels: {app: prov}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: prov-env, key: password}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: prov-env}
+stringData: {password: prov-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prov}
+spec:
+  selector: {app: prov}
+  ports: [{port: 5432}]
+---
+# readonly-secret wins over readonly-provision
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: both
+  uid: uid-both
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "developers:ro,dbas:rw"
+    athens.warewave.io/readonly-provision: "true"
+    athens.warewave.io/readonly-secret: both-ro
+spec:
+  serviceName: both
+  selector: {matchLabels: {app: both}}
+  template:
+    metadata: {labels: {app: both}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: both-env, key: password}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: both-env}
+stringData: {password: both-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: both}
+spec:
+  selector: {app: both}
+  ports: [{port: 5432}]
+---
+# not true/false: ignored, so read users have no login (warning)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: typo
+  uid: uid-typo
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "developers:ro,dbas:rw"
+    athens.warewave.io/readonly-provision: "maybe"
+spec:
+  serviceName: typo
+  selector: {matchLabels: {app: typo}}
+  template:
+    metadata: {labels: {app: typo}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: typo-env, key: password}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: typo-env}
+stringData: {password: typo-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: typo}
+spec:
+  selector: {app: typo}
+  ports: [{port: 5432}]
+---
+# explicit false: no read-only login, read users cannot connect (warning)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: disabled
+  uid: uid-disabled
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/access: "developers:ro,dbas:rw"
+    athens.warewave.io/readonly-provision: "false"
+spec:
+  serviceName: disabled
+  selector: {matchLabels: {app: disabled}}
+  template:
+    metadata: {labels: {app: disabled}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: disabled-env, key: password}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: disabled-env}
+stringData: {password: disabled-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: disabled}
+spec:
+  selector: {app: disabled}
+  ports: [{port: 5432}]
+---
+# the readonly-secret of "both"
+apiVersion: v1
+kind: Secret
+metadata: {name: both-ro}
+stringData: {username: both_ro, password: both-ro-pw}
