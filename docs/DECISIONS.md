@@ -113,3 +113,13 @@ suffix so no target silently takes over a name.
 Consequence: resolving a user or database from `envFrom.configMapRef` /
 `configMapKeyRef` needs `configmaps: get` in the per-namespace Role (still no
 list/watch).
+
+## ADR-018 Bind grid values with the column's type OID instead of `::type` casts
+ADR-004 and SPEC §8 describe `col = $1::<format_type>`. That embeds a type
+name string from the catalog into generated SQL (not an identifier that
+`pgx.Identifier.Sanitize` can handle). → Values are sent as text bind
+parameters whose parameter type OID is the column's type (`= ANY($n)` uses
+`pg_type.typarray`), so the server parses them with the column's input function
+exactly as a cast would. `like/ilike` compare `col::text`. Generated SQL then
+contains only sanitized identifiers, fixed keywords and `$n` placeholders. The
+same applies to grid writes (M7).

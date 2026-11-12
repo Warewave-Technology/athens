@@ -34,6 +34,17 @@ CREATE MATERIALIZED VIEW shop.order_totals AS SELECT customer_id, sum(amount) AS
 CREATE SEQUENCE shop.invoice_seq;
 CREATE TABLE public."Weird ""Name""" (id int PRIMARY KEY, "select" text);
 
+CREATE TYPE shop.pair AS (x int, y text);
+CREATE TABLE shop.types (
+  id int PRIMARY KEY, n numeric, i8 int8, j jsonb, arr int[], tarr text[], b bytea, ts timestamptz, iv interval,
+  u uuid, st shop.status, comp shop.pair, t text, r int4range, f float8
+);
+INSERT INTO shop.types VALUES
+  (1, 12345678901234567890.123456789, 9223372036854775807, '{"k": [1, "two", null]}', '{1,NULL,3}', '{"a b","c,d","e\"f"}',
+   '\xdeadbeef', '2024-02-29 23:59:59.123456+00', '1 year 2 mons 3 days 04:05:06.789', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+   'paid', ROW(7, 'seven'), repeat('long text ', 10000), '[1,10)', 'NaN'),
+  (2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
 INSERT INTO shop.customers(email, name) SELECT 'c' || g || '@example.com', 'Customer ' || g FROM generate_series(1, 50) g;
 INSERT INTO shop.orders(customer_id, status, amount, meta, tags, payload)
   SELECT 1 + (g % 50), (ARRAY['new','paid','shipped'])[1 + g % 3]::shop.status, g * 1.5, jsonb_build_object('n', g),

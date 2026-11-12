@@ -249,7 +249,7 @@ The list (schema-qualified or not, case-insensitive): `pg_terminate_backend`,
   columns. Filters: list of `{column, op, value}` combined with AND.
   Ops: `eq neq lt lte gt gte like ilike is_null not_null in` (`in` takes array).
   Column names validated against the table's columns (from catalog) before use.
-- Comparison values bound as text and cast: `col = $1::<format_type>`.
+- Comparison values bound as text with the column type OID (ADR-018; was `col = $1::<format_type>`).
 - Row count: `reltuples` estimate by default; `?exactCount=true` runs
   `count(*)` with `statement_timeout` = 5s; on timeout return estimate + flag.
 - Editing (M7): only tables (relkind `r`/`p`) with a primary key. Views,

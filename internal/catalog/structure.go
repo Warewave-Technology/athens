@@ -16,6 +16,7 @@ type ColumnInfo struct {
 	Generated *string `json:"generated"` // stored
 	Comment   *string `json:"comment"`
 	Position  int     `json:"position"`
+	ArrayOID  uint32  `json:"-"` // pg_type.typarray, for "= ANY($n)" filters
 }
 
 type Key struct {
@@ -73,15 +74,16 @@ func Columns(ctx context.Context, tx pgx.Tx, oid uint32) ([]ColumnInfo, error) {
 			pg_get_expr(d.adbin, d.adrelid),
 			CASE a.attidentity WHEN 'a' THEN 'always' WHEN 'd' THEN 'by_default' END,
 			CASE a.attgenerated WHEN 's' THEN 'stored' WHEN 'v' THEN 'virtual' END,
-			col_description(a.attrelid, a.attnum), a.attnum
-		FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+			col_description(a.attrelid, a.attnum), a.attnum, t.typarray
+		FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
+		LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
 		WHERE a.attrelid = $1 AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum`, oid)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ColumnInfo, error) {
 		var c ColumnInfo
-		return c, r.Scan(&c.Name, &c.Type, &c.TypeOID, &c.NotNull, &c.Default, &c.Identity, &c.Generated, &c.Comment, &c.Position)
+		return c, r.Scan(&c.Name, &c.Type, &c.TypeOID, &c.NotNull, &c.Default, &c.Identity, &c.Generated, &c.Comment, &c.Position, &c.ArrayOID)
 	})
 }
 

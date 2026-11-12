@@ -104,6 +104,10 @@ func (s *Server) routes() {
 	s.handle("GET "+db+"/schemas", s.listSchemas)
 	s.handle("GET "+db+"/relations", s.listRelations)
 	s.handle("GET "+db+"/relations/{schema}/{rel}/structure", s.structure)
+	s.handle("POST "+db+"/relations/{schema}/{rel}/rows/query", s.rowsQuery)
+	s.handle("GET "+db+"/relations/{schema}/{rel}/rows/cell", s.rowsCell)
+	s.handle("GET /ui-state/{key}", s.getUIState)
+	s.handle("PUT /ui-state/{key}", s.putUIState)
 	s.handle("GET /version", func(w http.ResponseWriter, _ *http.Request) error {
 		httpx.WriteJSON(w, http.StatusOK, version.Get())
 		return nil

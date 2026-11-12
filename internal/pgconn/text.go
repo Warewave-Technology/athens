@@ -32,6 +32,9 @@ type TextOptions struct {
 	// Cursor reads a row-returning read statement through a cursor so that
 	// at most MaxRows+1 rows are ever fetched from the server.
 	Cursor bool
+	// ParamOIDs are the parameter types (0 = let the server infer). Values
+	// are always sent as text and parsed by the server as that type.
+	ParamOIDs []uint32
 }
 
 // QueryText runs sql with text parameters (nil = NULL) and returns every
@@ -58,7 +61,7 @@ func encodeParams(params []*string) [][]byte {
 }
 
 func execText(ctx context.Context, tx pgx.Tx, sql string, params []*string, o TextOptions, keep int) (*TextResult, error) {
-	rr := tx.Conn().PgConn().ExecParams(ctx, sql, encodeParams(params), nil, nil, []int16{0})
+	rr := tx.Conn().PgConn().ExecParams(ctx, sql, encodeParams(params), o.ParamOIDs, nil, []int16{0})
 	res := &TextResult{}
 	// Field descriptions are only valid until Close; copy them first.
 	for _, fd := range rr.FieldDescriptions() {
@@ -84,10 +87,12 @@ const cursorName = "athens_result"
 
 func cursorText(ctx context.Context, tx pgx.Tx, sql string, params []*string, o TextOptions) (*TextResult, error) {
 	if _, err := tx.Conn().PgConn().ExecParams(ctx, "DECLARE "+cursorName+" NO SCROLL CURSOR FOR "+sql,
-		encodeParams(params), nil, nil, nil).Close(); err != nil {
+		encodeParams(params), o.ParamOIDs, nil, nil).Close(); err != nil {
 		return nil, err
 	}
-	res, err := execText(ctx, tx, fmt.Sprintf("FETCH FORWARD %d FROM %s", o.MaxRows+1, cursorName), nil, o, o.MaxRows)
+	fetch := o
+	fetch.ParamOIDs = nil
+	res, err := execText(ctx, tx, fmt.Sprintf("FETCH FORWARD %d FROM %s", o.MaxRows+1, cursorName), nil, fetch, o.MaxRows)
 	if err != nil {
 		return nil, err
 	}
