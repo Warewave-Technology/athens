@@ -103,3 +103,35 @@ func TestLineCol(t *testing.T) {
 		t.Fatalf("got %d:%d", l, c)
 	}
 }
+
+func TestLoginPage(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(c *client, path string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, h.srv.URL+path, nil)
+		if c != nil {
+			req.AddCookie(&http.Cookie{Name: "athens_session", Value: c.cookie})
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp
+	}
+	// anonymous: app pages redirect to the sign-in page, which itself renders
+	if r := get(nil, "/some/page"); r.StatusCode != 302 || r.Header.Get("Location") != "/login?returnTo=%2Fsome%2Fpage" {
+		t.Fatalf("anonymous page: %d %s", r.StatusCode, r.Header.Get("Location"))
+	}
+	if r := get(nil, "/login?returnTo=%2Fx"); r.StatusCode == 302 {
+		t.Fatalf("login page redirected anonymous user to %s", r.Header.Get("Location"))
+	}
+	// signed in: the sign-in page forwards to returnTo (validated)
+	c := h.login("w@example.com", "writers")
+	if r := get(c, "/login?returnTo=%2Fx"); r.StatusCode != 302 || r.Header.Get("Location") != "/x" {
+		t.Fatalf("signed-in login: %d %s", r.StatusCode, r.Header.Get("Location"))
+	}
+	if r := get(c, "/login?returnTo=%2F%2Fevil.com"); r.Header.Get("Location") != "/" {
+		t.Fatalf("open redirect: %s", r.Header.Get("Location"))
+	}
+}

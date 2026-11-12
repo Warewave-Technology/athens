@@ -29,7 +29,7 @@ export const csrfToken = () => readCookie("athens_csrf");
 
 export function loginURL(): string {
   const here = window.location.pathname + window.location.search + window.location.hash;
-  return "/auth/login?returnTo=" + encodeURIComponent(here);
+  return "/login?returnTo=" + encodeURIComponent(here);
 }
 
 export interface RequestOptions {

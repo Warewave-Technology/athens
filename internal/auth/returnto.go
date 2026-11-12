@@ -19,8 +19,8 @@ func SafeReturnTo(p string) string {
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
 		return "/"
 	}
-	if strings.HasPrefix(p, "/auth/") {
-		return "/"
+	if strings.HasPrefix(p, "/auth/") || p == "/login" || strings.HasPrefix(p, "/login?") {
+		return "/" // never bounce back into the sign-in flow
 	}
 	return p
 }

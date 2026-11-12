@@ -75,6 +75,16 @@ func (s *Server) build() http.Handler {
 	cb := "GET " + s.Config.OIDC.RedirectPath
 	root.Handle(cb, route(cb, http.HandlerFunc(s.Auth.HandleCallback)))
 	root.Handle("POST /auth/logout", route("POST /auth/logout", session(http.HandlerFunc(s.Auth.HandleLogout))))
+	// The sign-in page is part of the SPA but must render without a session;
+	// signed-in users skip it.
+	root.Handle("GET "+auth.LoginPath, route("GET "+auth.LoginPath, session(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if reqctx.UserFrom(r.Context()) != nil {
+			// #nosec G710 -- SafeReturnTo only allows same-origin relative paths (TestLoginPage, TestSafeReturnTo)
+			http.Redirect(w, r, auth.SafeReturnTo(r.URL.Query().Get("returnTo")), http.StatusFound)
+			return
+		}
+		s.SPA.ServeHTTP(w, r)
+	}))))
 
 	s.routes()
 	root.Handle("/api/", session(auth.RequireUser(s.Auth.CSRF(limitBody(maxBodyBytes, s.api)))))

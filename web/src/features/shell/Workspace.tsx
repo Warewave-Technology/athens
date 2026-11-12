@@ -1,6 +1,6 @@
 import { useRef } from "react";
-import { Columns3, Plus, Rows3, SquareTerminal, Table2, X } from "lucide-react";
-import { useRelations } from "../../api/hooks";
+import { Columns3, KeyRound, Plus, Rows3, SquareTerminal, Table2, X } from "lucide-react";
+import { useMe, useRelations, useTargets } from "../../api/hooks";
 import { Icon } from "../../components/Icon";
 import { quoteIdent } from "../../format";
 import { useWorkspace, type Tab } from "../../store/workspace";
@@ -72,7 +72,26 @@ function TableTab({ tab }: { tab: Extract<Tab, { kind: "table" }> }) {
 
 function EmptyMain() {
   const { targetId, db, openSql } = useWorkspace();
+  const targets = useTargets();
+  const me = useMe();
   const ready = !!targetId && !!db;
+  if (targets.data && targets.data.length === 0) {
+    return (
+      <div className="empty-main">
+        <div className="empty-card">
+          <span className="empty-icon">
+            <Icon as={KeyRound} size={20} />
+          </span>
+          <h2>You don’t have access to any databases yet</h2>
+          <p>
+            Access comes from your Microsoft Entra groups, and none of the groups for{" "}
+            <b>{me.data?.email ?? "your account"}</b> grant access to a database here. Ask your
+            platform team to add you to the right group, then sign out and in again.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="empty-main">
       <div className="empty-card">

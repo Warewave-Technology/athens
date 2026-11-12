@@ -12,7 +12,7 @@ import {
   TableProperties,
   type LucideIcon,
 } from "lucide-react";
-import { useRelations } from "../../api/hooks";
+import { useRelations, useTargets } from "../../api/hooks";
 import type { Relation, RelKind } from "../../api/types";
 import { Icon } from "../../components/Icon";
 import { formatCount } from "../../format";
@@ -46,6 +46,8 @@ export const TREE_SEARCH_ID = "tree-search";
 export function SchemaTree() {
   const { targetId, db, openTable, tabs, activeTab } = useWorkspace();
   const rels = useRelations(targetId, db);
+  const targets = useTargets();
+  const noAccess = targets.data?.length === 0;
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(0);
@@ -120,7 +122,9 @@ export function SchemaTree() {
 
   if (!targetId || !db)
     return (
-      <div className="side-hint">Choose a server and database above to browse its tables.</div>
+      <div className="side-hint">
+        {noAccess ? "" : "Choose a server and database above to browse its tables."}
+      </div>
     );
   return (
     <div className="schema-tree" onKeyDown={onKey}>

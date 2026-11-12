@@ -239,7 +239,7 @@ func TestUnauthenticated(t *testing.T) {
 		t.Fatalf("api: %d", r.StatusCode)
 	}
 	r := e.get(e.srv.URL + "/some/page?q=1")
-	if r.StatusCode != 302 || r.Header.Get("Location") != "/auth/login?returnTo=%2Fsome%2Fpage%3Fq%3D1" {
+	if r.StatusCode != 302 || r.Header.Get("Location") != "/login?returnTo=%2Fsome%2Fpage%3Fq%3D1" {
 		t.Fatalf("page: %d %s", r.StatusCode, r.Header.Get("Location"))
 	}
 }
@@ -421,16 +421,19 @@ func TestOpenRedirect(t *testing.T) {
 
 func TestSafeReturnTo(t *testing.T) {
 	cases := map[string]string{
-		"":                 "/",
-		"/":                "/",
-		"/a/b?c=d#e":       "/a/b?c=d#e",
-		"//evil.com":       "/",
-		"///evil.com":      "/",
-		"/\\evil.com":      "/",
-		"https://evil":     "/",
-		"javascript:alert": "/",
-		"/ok\r\nX: y":      "/",
-		"/auth/login":      "/",
+		"":                  "/",
+		"/":                 "/",
+		"/a/b?c=d#e":        "/a/b?c=d#e",
+		"//evil.com":        "/",
+		"///evil.com":       "/",
+		"/\\evil.com":       "/",
+		"https://evil":      "/",
+		"javascript:alert":  "/",
+		"/ok\r\nX: y":       "/",
+		"/auth/login":       "/",
+		"/login":            "/",
+		"/login?returnTo=/": "/",
+		"/logins":           "/logins",
 	}
 	for in, want := range cases {
 		if got := SafeReturnTo(in); got != want {

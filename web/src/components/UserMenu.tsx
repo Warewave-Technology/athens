@@ -3,6 +3,7 @@ import { Check, LogOut, Monitor, Moon, ShieldCheck, Sun } from "lucide-react";
 import { csrfToken } from "../api/client";
 import type { Me } from "../api/types";
 import type { ThemePref } from "../theme";
+import { SIGNED_OUT_KEY } from "../features/login/LoginPage";
 import { Icon } from "./Icon";
 import { Popover } from "./Popover";
 
@@ -62,7 +63,17 @@ export function UserMenu({
         )}
         <div className="pop-sep" />
         {/* A real form post: signing out needs a top-level navigation to Entra (ADR-015). */}
-        <form method="post" action="/auth/logout">
+        <form
+          method="post"
+          action="/auth/logout"
+          onSubmit={() => {
+            try {
+              sessionStorage.setItem(SIGNED_OUT_KEY, "1"); // the sign-in page confirms it
+            } catch {
+              /* storage unavailable */
+            }
+          }}
+        >
           <input type="hidden" name="csrf" value={csrfToken()} />
           <button type="submit" className="pop-item">
             <Icon as={LogOut} size={14} />

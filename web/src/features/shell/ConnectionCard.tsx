@@ -88,7 +88,11 @@ export function ConnectionCard() {
           <span className="conn-line">
             <Icon as={Server} />
             <span className="conn-name">
-              {targets.isPending ? "Loading databases…" : "Connect to a database"}
+              {targets.isPending
+                ? "Loading databases…"
+                : targets.data?.length === 0
+                  ? "No databases available"
+                  : "Connect to a database"}
             </span>
           </span>
         )}

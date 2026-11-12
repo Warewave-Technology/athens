@@ -48,7 +48,7 @@ func (a *Authenticator) LoadSession(next http.Handler) http.Handler {
 }
 
 // RequireUser rejects anonymous requests: 401 JSON under /api, otherwise a
-// redirect to the login page that returns to the current path.
+// redirect to the sign-in page (/login) that returns to the current path.
 func RequireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if reqctx.UserFrom(r.Context()) == nil {
@@ -56,7 +56,7 @@ func RequireUser(next http.Handler) http.Handler {
 				httpx.WriteError(w, httpx.ErrUnauthenticated)
 				return
 			}
-			http.Redirect(w, r, "/auth/login?"+url.Values{"returnTo": {SafeReturnTo(r.URL.RequestURI())}}.Encode(), http.StatusFound)
+			http.Redirect(w, r, LoginPath+"?"+url.Values{"returnTo": {SafeReturnTo(r.URL.RequestURI())}}.Encode(), http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, r)

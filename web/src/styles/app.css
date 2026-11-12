@@ -1467,3 +1467,19 @@ table.simple td.audit-sql pre {
   background: var(--subtle);
   color: var(--text);
 }
+
+/* the user row sits at the bottom whatever the tree shows */
+.sidebar > .user-wrap {
+  margin-top: auto;
+}
+
+.empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: var(--laurel-soft);
+  color: var(--laurel-text);
+}

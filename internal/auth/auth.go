@@ -28,6 +28,9 @@ import (
 	"github.com/Warewave-Technology/athens/internal/version"
 )
 
+// LoginPath is the sign-in page (rendered by the SPA, served without a session).
+const LoginPath = "/login"
+
 const (
 	loginStateTTL = 10 * time.Minute
 	touchInterval = 30 * time.Second
@@ -427,7 +430,7 @@ border-radius:14px;background:#fff}h1{font-size:18px;font-weight:600;margin:0 0 
 margin-top:8px;padding:6px 14px;border-radius:7px;background:#1d5fa8;color:#fff;text-decoration:none;font-weight:500}
 @media (prefers-color-scheme:dark){body{background:#0d1320;color:#e7ebf2}main{background:#131b2b;border-color:#222d42}
 p{color:#b4bccb}a{background:#6fa8e8;color:#0d1320}}</style></head><body><main><h1>Sign-in problem</h1><p>{{.}}</p>
-<p><a href="/auth/login">Sign in again</a></p></main></body></html>`))
+<p><a href="/login">Back to sign in</a></p></main></body></html>`))
 
 func (a *Authenticator) errorPage(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
