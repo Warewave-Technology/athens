@@ -55,6 +55,7 @@ never leave the backend.
 - [Security model](#security-model)
 - [Documentation](#documentation)
 - [Development](#development)
+- [License](#license)
 
 ## How it works
 
@@ -414,3 +415,9 @@ Tags with a suffix (`v0.2.0-rc.1`) become pre-releases and do not move
 
 Code layout and working rules: [CLAUDE.md](CLAUDE.md) and
 [docs/TASKS.md](docs/TASKS.md).
+
+## License
+
+athens is open source under the [Apache License 2.0](LICENSE): use it,
+change it and ship it, commercially or not. See [NOTICE](NOTICE) for
+third-party fonts and the trademarks the logo refers to.

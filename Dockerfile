@@ -39,6 +39,7 @@ USER 65532:65532
 ENTRYPOINT ["/e2e", "-test.v", "-test.timeout=15m"]
 
 FROM gcr.io/distroless/static-debian12:nonroot AS athens
+COPY LICENSE NOTICE /licenses/
 COPY --from=go /out/athens /athens
 USER 65532:65532
 EXPOSE 8080 9090

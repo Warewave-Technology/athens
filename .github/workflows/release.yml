@@ -47,6 +47,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=athens
             org.opencontainers.image.description=PostgreSQL web client for Kubernetes with Entra ID sign-in
+            org.opencontainers.image.licenses=Apache-2.0
       - id: date
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - id: build

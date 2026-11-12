@@ -1,0 +1,23 @@
+athens
+Copyright 2026 Warewave Technology
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party material
+--------------------
+
+- IBM Plex Sans and IBM Plex Mono (bundled in the web UI via @fontsource):
+  Copyright IBM Corp., licensed under the SIL Open Font License 1.1.
+- The "Athens" wordmark in docs/assets/brand is drawn from outlines of
+  Poppins Bold, Copyright Indian Type Foundry, SIL Open Font License 1.1.
+- Go modules and npm packages are used under their own licenses, listed in
+  go.mod / go.sum and web/pnpm-lock.yaml.
+
+Trademarks
+----------
+
+PostgreSQL and the Slonik elephant logo are trademarks of the PostgreSQL
+Community Association. Kubernetes and the Kubernetes logo are trademarks of
+The Linux Foundation. The athens logo echoes these marks; this project is not
+affiliated with or endorsed by either organization. The Apache License does
+not grant rights to use trade names, trademarks or logos (section 6).
