@@ -129,6 +129,9 @@ server uses it as `queryId` if valid and unique for the user.
 
 ## Admin (isAdmin only, else 404)
 - `GET /admin/audit?user&targetId&event&from&to&limit&before`
+- `GET /admin/audit/export?format=csv|jsonl&user&targetId&event&from&to` →
+  attachment, newest first, every matching record up to 100 000
+  (`X-Athens-Export-Capped: true` when capped); audited as `audit_export`
 - `GET /admin/discovery` → targets with source, owner, warnings, last rebuild, errors
 - `GET /admin/pools` → per key: total/idle/acquired conns, created, last error
 

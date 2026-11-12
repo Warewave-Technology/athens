@@ -44,6 +44,68 @@ shipped through stdout.
 Audit records older than `audit.retentionDays` (default 90) are purged daily;
 sessions are purged every 10 minutes.
 
+## Audit trail
+
+athens writes every audit record twice: to the `audit_log` table on the PVC
+(what Admin → Audit shows) and to stdout as one JSON line with
+`"log":"audit"`. The SQLite copy is convenient but not tamper-proof: anyone who
+can exec into the pod or mount the PVC can change it. Treat the stdout copy as
+the record of truth and ship it to append-only storage.
+
+Events: `login`, `login_denied`, `logout`, `query_execute`, `query_cancel`,
+`row_insert`, `row_update`, `row_delete`, `access_denied`, `confirm_required`,
+`rows_read`, `cell_read`, `structure_view` (reads, `audit.logReads`),
+`saved_query_create|update|delete`, `history_delete`, `admin_view`,
+`audit_export`. Drafts and UI state are autosaved on every edit and are not
+audited.
+
+### Shipping the stdout copy
+
+Select lines whose JSON has `log == "audit"` from the athens container and
+send them to a store with retention and write-once guarantees (S3 Object Lock,
+Azure immutable blob storage, a SIEM). Examples:
+
+Fluent Bit (Kubernetes filter already parsing JSON into the record):
+
+```ini
+[FILTER]
+    Name    grep
+    Match   kube.*athens*
+    Regex   log ^audit$
+
+[OUTPUT]
+    Name    azure_blob          # or s3 with Object Lock, splunk, es, ...
+    Match   kube.*athens*
+    # ...
+```
+
+Vector:
+
+```toml
+[transforms.athens_audit]
+type      = "filter"
+inputs    = ["kubernetes_logs"]
+condition = '.kubernetes.container_name == "athens" && parse_json!(.message).log == "audit"'
+```
+
+Loki (Promtail/Alloy with the JSON stage) — query:
+
+```logql
+{namespace="athens", container="athens"} | json | log="audit"
+```
+
+Alert on `increase(athens_audit_write_errors_total[10m]) > 0` (the SQLite copy
+is failing) and on the absence of audit lines from a running pod in your log
+backend.
+
+### Exporting
+
+Admin → Audit → **CSV** / **JSON Lines** downloads every record matching the
+applied filters (up to 100 000 per export; the response carries
+`X-Athens-Export-Capped: true` when the cap was hit). Exports are audited
+(`audit_export`). In CSV, cells that start with `= + - @` get a leading `'` so
+spreadsheets do not evaluate them.
+
 ## Upgrades
 
 `helm upgrade` replaces the pod (Recreate); expect a few seconds of downtime.

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { Download } from "lucide-react";
 import { EnvBadge } from "../../components/EnvBadge";
+import { Icon } from "../../components/Icon";
 
 interface AuditRecord {
   id: number;
@@ -34,7 +36,25 @@ const events = [
   "row_delete",
   "access_denied",
   "confirm_required",
+  "rows_read",
+  "cell_read",
+  "structure_view",
+  "saved_query_create",
+  "saved_query_update",
+  "saved_query_delete",
+  "history_delete",
+  "admin_view",
+  "audit_export",
 ];
+
+function filterParams(f: Record<string, string>) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) {
+    if (!v) continue;
+    p.set(k, k === "from" || k === "to" ? new Date(v).toISOString() : v);
+  }
+  return p;
+}
 
 function oneLine(s: string) {
   const t = s.replace(/\s+/g, " ").trim();
@@ -49,18 +69,20 @@ function AuditView() {
     queryKey: ["admin-audit", filters],
     initialPageParam: 0,
     queryFn: ({ pageParam }) => {
-      const p = new URLSearchParams({ limit: "100" });
+      const p = filterParams(filters);
+      p.set("limit", "100");
       if (pageParam) p.set("before", String(pageParam));
-      for (const [k, v] of Object.entries(filters)) {
-        if (!v) continue;
-        p.set(k, k === "from" || k === "to" ? new Date(v).toISOString() : v);
-      }
       return api<{ items: AuditRecord[] }>("/admin/audit?" + p.toString());
     },
     getNextPageParam: (last) =>
       last.items.length === 100 ? last.items[last.items.length - 1].id : undefined,
   });
   const items = q.data?.pages.flatMap((p) => p.items) ?? [];
+  const exportHref = (format: string) => {
+    const p = filterParams(filters);
+    p.set("format", format);
+    return "/api/v1/admin/audit/export?" + p.toString();
+  };
   return (
     <div className="admin-section">
       <form
@@ -109,6 +131,16 @@ function AuditView() {
         <button className="primary" type="submit">
           Apply
         </button>
+        <span className="admin-export" title="Exports every record matching the applied filters">
+          <a className="button-link" href={exportHref("csv")} download>
+            <Icon as={Download} size={14} />
+            CSV
+          </a>
+          <a className="button-link" href={exportHref("jsonl")} download>
+            <Icon as={Download} size={14} />
+            JSON Lines
+          </a>
+        </span>
       </form>
       {q.isError && <div className="error-banner">{q.error.message}</div>}
       <div className="table-frame">
@@ -158,7 +190,7 @@ function AuditView() {
                       {a.object ? "\n" + a.object : ""}
                     </pre>
                   ) : (
-                    oneLine(a.sql ?? a.details ?? "")
+                    oneLine(a.sql ?? [a.object, a.details].filter(Boolean).join(" "))
                   )}
                 </td>
               </tr>

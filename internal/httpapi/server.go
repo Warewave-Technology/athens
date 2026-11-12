@@ -51,6 +51,7 @@ type Server struct {
 
 	once    sync.Once
 	handler http.Handler
+	views   viewLog
 }
 
 func New(d Deps) *Server {
@@ -123,6 +124,7 @@ func (s *Server) routes() {
 	s.handle("GET /admin/discovery", s.adminDiscovery)
 	s.handle("GET /admin/pools", s.adminPools)
 	s.handle("GET /admin/audit", s.adminAudit)
+	s.handle("GET /admin/audit/export", s.adminAuditExport)
 	s.handle("GET /targets", s.listTargets)
 	s.handle("GET /targets/{ns}/{name}/databases", s.listDatabases)
 	const db = "/targets/{ns}/{name}/db/{db}"

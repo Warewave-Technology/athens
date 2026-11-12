@@ -155,3 +155,22 @@ credential resolution from the container env (§4.4) and from operator secrets
 (§4.2, §4.3) still works for annotated objects, so teams don't have to copy
 secret names into annotations. `requireAnnotation: false` restores automatic
 discovery. RBAC is unchanged (list/watch is needed to read the annotations).
+
+## ADR-021 Reads, admin views and user items are audited
+The first audit trail covered sign-ins, editor executions and grid writes
+only, so browsing a table in the grid left no trace although an editor
+`SELECT` did. → With `audit.logReads: true` (default) every grid page
+(`rows_read`), full cell value (`cell_read`) and structure view
+(`structure_view`) is recorded with target, database and `schema.relation`.
+Grid filter values are kept only with `audit.logValues` (they can be the
+sensitive data itself); primary keys of cell reads are kept, as they already
+are for row updates. Schema/relation listings and completion are navigation
+metadata and are not recorded. Saved query create/update/delete and history
+deletes are recorded (SQL in the `sql` field, subject to `logSQL`); drafts and
+UI state are autosaved per keystroke and are not. Admin page views are
+recorded as `admin_view`, throttled in memory to one per user, page and
+filter set every 5 minutes because the pages poll; "load more" pages of the
+audit view are the same view. Admins can export the filtered log as CSV or
+JSON Lines (capped at 100 000 records, export audited, CSV formula cells
+prefixed with `'`). The SQLite copy stays app-level tamper-resistant only;
+OPERATIONS.md documents shipping the stdout copy to append-only storage.

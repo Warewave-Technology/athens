@@ -290,7 +290,13 @@ be shipped by the cluster log pipeline. Audit write failure in SQLite must not
 block the user action but must log an error and increment a metric.
 
 Events: `login`, `login_denied`, `logout`, `query_execute`, `query_cancel`,
-`row_insert`, `row_update`, `row_delete`, `access_denied`, `confirm_required`.
+`row_insert`, `row_update`, `row_delete`, `access_denied`, `confirm_required`;
+reads when `audit.logReads=true` (default): `rows_read` (each grid page; sort,
+filter columns and operators, values only with `audit.logValues`),
+`cell_read` (column + pk), `structure_view`; the user's stored items:
+`saved_query_create|update|delete`, `history_delete`; admin: `admin_view`
+(throttled to one per user, page and filter set per 5 min, the pages poll),
+`audit_export`. Drafts and UI state are autosaved and not audited (ADR-021).
 
 Fields: ts, event, user_id, email, client_ip (from `X-Forwarded-For` only if
 `server.trustedProxies` CIDR matches), user_agent, target_id, database,
@@ -298,7 +304,9 @@ object (schema.table), statement_class, destructive, sql (if
 `audit.logSQL=true`, default true, truncated 8 KiB), rows_affected,
 duration_ms, result (`ok|error|denied|cancelled`), error_code (SQLSTATE).
 
-Retention: `audit.retentionDays` (default 90), purge daily.
+Retention: `audit.retentionDays` (default 90), purge daily. Admins can export
+the filtered log as CSV or JSON Lines (`GET /admin/audit/export`). Shipping the
+stdout copy to append-only storage: OPERATIONS.md "Audit trail".
 
 ## 11. Observability
 
