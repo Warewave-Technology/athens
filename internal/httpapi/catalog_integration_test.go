@@ -126,7 +126,7 @@ func TestCatalogEndpoints(t *testing.T) {
 			resp.json(t, &weird)
 		}
 		var comp struct{ Tables map[string][]string }
-		w.get(dbPath + "/completion").json(t, &comp)
+		w.get(dbPath+"/completion").json(t, &comp)
 		if cols := comp.Tables["shop.orders"]; len(cols) != 8 || cols[0] != "id" {
 			t.Errorf("completion %v", comp.Tables["shop.orders"])
 		}
