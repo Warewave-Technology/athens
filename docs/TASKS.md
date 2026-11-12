@@ -7,26 +7,26 @@ MVP = M0–M6 (read-only grid). M7 adds grid editing. M8 = hardening extras.
 ---
 
 ## M0 — Repo, build, CI
-- [ ] `go mod init github.com/Warewave-Technology/athens`, Go 1.26, layout from CLAUDE.md
-- [ ] `internal/version` (name, version, commit, buildDate via ldflags)
-- [ ] `web/`: Vite + React + TS + pnpm, ESLint, Prettier, TanStack Query, router
-- [ ] `go:embed web/dist`; `--dev` flag proxies non-API paths to Vite (:5173)
-- [ ] Makefile targets from CLAUDE.md
-- [ ] Dockerfile: node build stage → go build stage (`CGO_ENABLED=0`, `-trimpath`) → `gcr.io/distroless/static-debian12:nonroot`
-- [ ] GitHub Actions: lint, unit tests, integration tests (service docker), build image, trivy scan
-- [ ] golangci-lint config (errcheck, gosec, govet, staticcheck, revive, sqlclosecheck, bodyclose)
+- [x] `go mod init github.com/Warewave-Technology/athens`, Go 1.26, layout from CLAUDE.md
+- [x] `internal/version` (name, version, commit, buildDate via ldflags)
+- [x] `web/`: Vite + React + TS + pnpm, ESLint, Prettier, TanStack Query, router
+- [x] `go:embed web/dist`; `--dev` flag proxies non-API paths to Vite (:5173)
+- [x] Makefile targets from CLAUDE.md
+- [x] Dockerfile: node build stage → go build stage (`CGO_ENABLED=0`, `-trimpath`) → `gcr.io/distroless/static-debian12:nonroot`
+- [x] GitHub Actions: lint, unit tests, integration tests (service docker), build image, trivy scan
+- [x] golangci-lint config (errcheck, gosec, govet, staticcheck, revive, sqlclosecheck, bodyclose)
 
 **Accept:** `make build` produces one binary serving a placeholder SPA at `/`
 and `/healthz` → 200; image < 40 MB; CI green.
 
 ## M1 — Config, store, auth
-- [ ] `internal/config`: struct per `config.example.yaml`, YAML + env override, validation (SPEC §4) with aggregated error list
-- [ ] `internal/store`: `Store` interface + SQLite impl, embedded migrations, PRAGMAs, purge jobs (sessions 10m, audit daily)
-- [ ] `internal/auth`: login, callback (state, nonce, PKCE, tid check, groups overage reject, allowedGroups), sessions (§5.3), logout with end-session redirect, `returnTo` validation
-- [ ] Middleware: `RequireSession` (401 JSON for /api, 302 for others), CSRF (§5.4), security headers (§12), request logging, panic recovery, body limits
-- [ ] `GET /api/v1/me`
-- [ ] Audit writer (`internal/audit`) with `login`, `login_denied`, `logout`
-- [ ] Frontend: 401 handling → redirect to `/auth/login?returnTo=`, user menu with logout
+- [x] `internal/config`: struct per `config.example.yaml`, YAML + env override, validation (SPEC §4) with aggregated error list
+- [x] `internal/store`: `Store` interface + SQLite impl, embedded migrations, PRAGMAs, purge jobs (sessions 10m, audit daily)
+- [x] `internal/auth`: login, callback (state, nonce, PKCE, tid check, groups overage reject, allowedGroups), sessions (§5.3), logout with end-session redirect, `returnTo` validation
+- [x] Middleware: `RequireSession` (401 JSON for /api, 302 for others), CSRF (§5.4), security headers (§12), request logging, panic recovery, body limits
+- [x] `GET /api/v1/me`
+- [x] Audit writer (`internal/audit`) with `login`, `login_denied`, `logout`
+- [x] Frontend: 401 handling → redirect to `/auth/login?returnTo=`, user menu with logout
 
 **Accept:** with mockoidc: full login → `/me` works; tampered state/nonce →
 rejected; wrong tenant → rejected; overage claim → error page; expired/idle

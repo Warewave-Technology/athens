@@ -24,10 +24,11 @@ go:
 
 build: web go
 
-# Backend on :8080 proxies the SPA to Vite on :5173. Open http://localhost:8080.
+# Backend on :7080 proxies the SPA to Vite on :5173. Open http://localhost:7080.
 dev: web/node_modules
 	@trap 'kill 0' EXIT; \
 	(cd web && pnpm dev) & \
+	go run ./hack/mockidp & \
 	go run ./cmd/athens --dev --config $${ATHENS_CONFIG:-hack/dev/config.yaml}; \
 	wait
 

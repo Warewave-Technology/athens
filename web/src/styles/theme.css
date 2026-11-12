@@ -1,0 +1,185 @@
+/* Gruvbox palette (https://github.com/morhetz/gruvbox), light + dark. */
+:root,
+:root[data-theme="light"] {
+  --bg: #fbf1c7;
+  --bg-soft: #f2e5bc;
+  --bg1: #ebdbb2;
+  --bg2: #d5c4a1;
+  --bg3: #bdae93;
+  --fg: #3c3836;
+  --fg-soft: #504945;
+  --fg-muted: #7c6f64;
+  --red: #9d0006;
+  --green: #79740e;
+  --yellow: #b57614;
+  --blue: #076678;
+  --purple: #8f3f71;
+  --aqua: #427b58;
+  --orange: #af3a03;
+  --accent: var(--blue);
+  --danger: var(--red);
+  --null: #928374;
+  --selection: #d5c4a1;
+  --dirty: rgba(181, 118, 20, 0.22);
+  --shadow: 0 6px 24px rgba(60, 56, 54, 0.18);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #282828;
+  --bg-soft: #32302f;
+  --bg1: #3c3836;
+  --bg2: #504945;
+  --bg3: #665c54;
+  --fg: #ebdbb2;
+  --fg-soft: #d5c4a1;
+  --fg-muted: #a89984;
+  --red: #fb4934;
+  --green: #b8bb26;
+  --yellow: #fabd2f;
+  --blue: #83a598;
+  --purple: #d3869b;
+  --aqua: #8ec07c;
+  --orange: #fe8019;
+  --null: #7c6f64;
+  --selection: #504945;
+  --dirty: rgba(250, 189, 47, 0.18);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+code,
+.mono,
+.cm-editor {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+a {
+  color: var(--accent);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: var(--bg1);
+  border: 1px solid var(--bg2);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg2);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--bg);
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+input,
+select,
+textarea {
+  background: var(--bg-soft);
+  border: 1px solid var(--bg2);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  background: var(--bg2);
+  color: var(--fg-soft);
+  white-space: nowrap;
+}
+
+.badge.env-production {
+  background: var(--red);
+  color: var(--bg);
+}
+
+.badge.env-staging {
+  background: var(--yellow);
+  color: var(--bg);
+}
+
+.badge.env-development {
+  background: var(--green);
+  color: var(--bg);
+}
+
+.badge.level-read {
+  background: var(--bg2);
+}
+
+.badge.level-write {
+  background: var(--aqua);
+  color: var(--bg);
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.error-text {
+  color: var(--red);
+}
+
+.center-screen {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}

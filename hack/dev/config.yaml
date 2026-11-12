@@ -1,0 +1,27 @@
+# Local development config: `make dev` (mock IdP on :7082, backend on :7080, Vite on :5173).
+server:
+  listen: ":7080"
+  metricsListen: ":7090"
+  baseURL: "http://localhost:7080"
+  insecureDev: true
+oidc:
+  issuer: "http://127.0.0.1:7082/oidc"
+  clientID: "athens-dev"
+  clientSecret: "athens-dev-secret"
+  skipIssuerTenantCheck: true
+auth:
+  # dev-only key, never use outside local development
+  sessionKey: "ZGV2LW9ubHktc2Vzc2lvbi1rZXktMzItYnl0ZXMtbG9uZyE="
+authz:
+  adminGroups: ["dev-admins"]
+  rules:
+    - name: dev-write
+      groups: ["dev-writers"]
+      namespaces: ["*"]
+      level: write
+discovery:
+  namespaces: ["default"]
+store:
+  path: "./athens-dev.db"
+log:
+  level: debug

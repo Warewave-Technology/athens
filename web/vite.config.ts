@@ -12,11 +12,11 @@ const keepPlaceholder = {
   },
 };
 
-// In development the Go backend (--dev) serves on :8080 and proxies every
+// In development the Go backend (--dev) serves on :7080 (make dev) and proxies every
 // non-API path to this server, so the browser only ever talks to one origin.
 export default defineConfig({
   plugins: [react(), keepPlaceholder],
-  server: { port: 5173, strictPort: true, hmr: { clientPort: 8080 } },
+  server: { port: 5173, strictPort: true, hmr: { clientPort: 7080 } },
   build: { outDir: "dist", emptyOutDir: true, sourcemap: false, chunkSizeWarningLimit: 2000 },
   test: { environment: "jsdom" },
 });

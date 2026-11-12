@@ -1,0 +1,59 @@
+.app {
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--bg2);
+}
+
+.topbar .brand {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar .spacer {
+  flex: 1;
+}
+
+.user-menu {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  min-width: 200px;
+  background: var(--bg-soft);
+  border: 1px solid var(--bg2);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  padding: 4px 0;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  color: var(--fg);
+  text-decoration: none;
+  border-radius: 0;
+}
+
+a.menu-item:hover,
+button.menu-item:hover {
+  background: var(--bg1);
+}
