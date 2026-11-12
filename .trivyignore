@@ -1,0 +1,13 @@
+# Accepted or not applicable Trivy misconfiguration findings (ADR-027).
+
+# The ClusterRole may `get` (not list) Secrets in every namespace when the whole
+# cluster is watched (ADR-024). Accepted by the owner; list namespaces in
+# config.discovery.namespaces to scope it down.
+AVD-KSV-0041
+# Same permission per namespace in namespaced mode: it is the feature.
+AVD-KSV-0113
+# The image is published to ghcr.io/warewave-technology, the project registry.
+AVD-KSV-0125
+# Kubernetes liveness/readiness probes are used; distroless has no shell for a
+# Docker HEALTHCHECK.
+AVD-DS-0026

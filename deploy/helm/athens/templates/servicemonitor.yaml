@@ -3,6 +3,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "athens.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "athens.labels" . | nindent 4 }}
     {{- with .Values.serviceMonitor.labels }}{{ toYaml . | nindent 4 }}{{ end }}

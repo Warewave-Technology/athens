@@ -28,17 +28,17 @@ FROM go AS tools
 RUN go build -ldflags "-s -w" -o /out/mockidp ./hack/mockidp && \
     go test -c -tags e2e -o /out/e2e ./test/e2e
 
-FROM gcr.io/distroless/static-debian12:nonroot AS mockidp
+FROM gcr.io/distroless/static-debian13:nonroot AS mockidp
 COPY --from=tools /out/mockidp /mockidp
 USER 65532:65532
 ENTRYPOINT ["/mockidp"]
 
-FROM gcr.io/distroless/static-debian12:nonroot AS e2e
+FROM gcr.io/distroless/static-debian13:nonroot AS e2e
 COPY --from=tools /out/e2e /e2e
 USER 65532:65532
 ENTRYPOINT ["/e2e", "-test.v", "-test.timeout=15m"]
 
-FROM gcr.io/distroless/static-debian12:nonroot AS athens
+FROM gcr.io/distroless/static-debian13:nonroot AS athens
 COPY LICENSE NOTICE /licenses/
 COPY --from=go /out/athens /athens
 USER 65532:65532
