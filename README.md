@@ -227,7 +227,7 @@ settings: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 ### 4. Install the chart
 
 ```bash
-helm upgrade --install athens oci://ghcr.io/warewave-technology/charts/athens --version 0.2.0 -n athens -f values.yaml
+helm upgrade --install athens oci://ghcr.io/warewave-technology/charts/athens --version 0.2.1 -n athens -f values.yaml
 ```
 
 The chart installs the image `ghcr.io/warewave-technology/athens` of the same
