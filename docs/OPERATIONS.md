@@ -112,6 +112,14 @@ Upgrading to 0.1.3 or later ends existing sessions once: the session
 cookies were renamed to `__Host-athens_session` / `__Host-athens_csrf`
 (ADR-027), so everyone signs in again.
 
+Upgrading to 0.2.0 changes read access (ADR-028): users with `ro` access
+only connect with a read-only login. Before upgrading, check Admin →
+Discovery for databases that grant `ro` (or are `readonly`) and give each
+one `athens.warewave.io/readonly-provision: "true"` or a `readonly-secret`;
+after the upgrade, the warning "read users cannot connect" lists any you
+missed. Remove `athens.warewave.io/readonly-role` annotations; they are
+ignored.
+
 `helm upgrade` replaces the pod (Recreate); expect a few seconds of downtime.
 Schema migrations of the SQLite store run automatically at start and are
 forward-only; back up the PVC before major upgrades. Sessions survive
