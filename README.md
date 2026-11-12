@@ -143,14 +143,33 @@ kubectl -n athens-demo annotate deployment scratch-db athens.warewave.io/readonl
    - Redirect URI: platform **Web**, `https://athens.example.com/auth/callback`
 2. **Certificates & secrets → New client secret.** Copy the value; it is
    shown only once.
-3. **Token configuration → Add groups claim** → **Groups assigned to the
-   application**, emitted as group IDs in the ID token. With this option, a
-   user in many groups still gets a groups claim; athens refuses the overage
-   claim Entra sends for more than 200 groups (ADR-007).
-4. **Enterprise applications → athens → Properties:** set *Assignment
-   required?* to **Yes**. Then under **Users and groups**, assign every group
-   you use in `access` annotations and admin groups.
-5. Note the **Directory (tenant) ID** and the **Application (client) ID**.
+3. **Token configuration → Add groups claim.** Which groups the ID token
+   carries decides what athens can match against `access` annotations, so
+   pick the option your licence allows:
+
+   | | Entra ID P1/P2 | Entra ID Free (or no group assignment) |
+   |---|---|---|
+   | Groups claim | **Groups assigned to the application** | **Security groups** |
+   | Token carries | only the groups you assign in step 4 | every security group the user is in (nested included) |
+   | Group names in the token | optional: tick *Emit group name for cloud-only groups* | object IDs only (names only for groups synced from on-premises AD, via `sAMAccountName`) |
+   | Users in more than 200 groups | not a problem (only assigned groups count) | sign-in refused with a "too many groups" page (ADR-007) |
+
+   "Groups assigned to the application" without any assigned group sends an
+   **empty** groups claim: everyone can sign in, but nobody can use a
+   database.
+4. **Who may sign in.**
+   - *P1/P2:* **Enterprise applications → athens → Properties →
+     Assignment required? = Yes**, then **Users and groups → Add
+     user/group** and assign every group used in `access` annotations,
+     `authz.adminGroups` and `oidc.allowedGroups`.
+   - *Free:* the portal only lets you assign individual users, not groups.
+     Leave *Assignment required?* at **No** and restrict sign-in in athens
+     instead with `oidc.allowedGroups` (see "3. Write your values" below). Without
+     it, every user of the tenant can sign in, but sees no database unless
+     an `access` annotation names one of their groups.
+5. Note the **Directory (tenant) ID** and the **Application (client) ID**,
+   and the **object IDs** of the groups you will use (Entra admin center →
+   Groups → the group → Overview).
 
 ### 2. Create the Secret
 
@@ -175,6 +194,7 @@ config:
   oidc:
     issuer: https://login.microsoftonline.com/<TENANT_ID>/v2.0
     clientID: <APPLICATION_CLIENT_ID>
+    allowedGroups: ["<GROUP_ID_DB_USERS>", "<GROUP_ID_PLATFORM_ADMINS>"]   # optional: who may sign in at all
   authz:
     adminGroups: ["<GROUP_ID_PLATFORM_ADMINS>"]   # see the Administration pages
     groupAliases:                          # optional: readable names for access annotations
@@ -295,8 +315,9 @@ metadata:
 | `payments-dev:ro` | the `payments-dev` group may only read |
 | `7c1f0f6e-...:ro` | an Entra group object ID works as is |
 
-Entra tokens carry group IDs by default. For readable names, either let Entra
-emit group names or map names to IDs in `authz.groupAliases`. The athens
+Entra tokens carry group object IDs. For readable names, map them in
+`authz.groupAliases` (works with every Entra licence), or, with groups
+assigned to the application, let Entra emit cloud group names. The athens
 configuration only names the admin groups and an emergency
 `authz.readOnly` switch. Evaluation order, worked examples and guardrails:
 [docs/ACCESS-CONTROL.md](docs/ACCESS-CONTROL.md).

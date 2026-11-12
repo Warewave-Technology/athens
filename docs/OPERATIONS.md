@@ -125,7 +125,8 @@ upgrades.
 
 | Symptom | Check |
 |---|---|
-| Sign-in page "too many groups" | the token has a groups overage claim: set `groupMembershipClaims` to `ApplicationGroup` and assign groups to the enterprise app (README step 1.3/1.4) |
+| Sign-in page "too many groups" | the user is in more than 200 groups and the token has an overage claim. With Entra ID P1/P2: emit "Groups assigned to the application" and assign the groups to the enterprise app (README step 1.3/1.4). On a Free tenant there is no v1 workaround besides fewer group memberships for that user (ADR-007) |
+| Everyone signs in but nobody sees a database | the groups claim is empty: "Groups assigned to the application" is set but no groups are assigned (common on Entra ID Free, which cannot assign groups). Switch the groups claim to "Security groups" (README step 1.3) |
 | Sign-in "not authorized for this application" | `oidc.allowedGroups` is set and the user is in none of them |
 | Sign-in "tenant mismatch" | `oidc.issuer` tenant differs from the user's `tid` (guest accounts from other tenants are rejected) |
 | A user sees no targets | no database's `athens.warewave.io/access` annotation lists one of the user's groups. The token carries group **object IDs** unless Entra is set to emit names; use IDs or `authz.groupAliases`. Ask the user to sign out and in again after group changes (groups are snapshotted at login) |

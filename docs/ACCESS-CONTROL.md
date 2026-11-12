@@ -27,11 +27,23 @@ Users sign in with Microsoft Entra ID only (OpenID Connect, authorization code
 with PKCE); there are no local accounts. athens reads the user's groups from
 the `groups` claim of the ID token at sign-in and keeps them in the session.
 
-- `oidc.allowedGroups` (optional): only members of one of these groups may
-  sign in at all. Everyone else gets "not authorized for this application".
-- Configure the app registration to emit **groups assigned to the
-  application**. A user in more than 200 groups otherwise gets an overage
-  claim, and athens refuses the sign-in (ADR-007).
+- **Which groups the token carries** is set by the app registration's groups
+  claim, and it depends on the Entra licence:
+  - *Entra ID P1/P2:* emit **groups assigned to the application** and assign
+    the groups to the enterprise application. Only those groups reach
+    athens, so users in hundreds of groups are fine.
+  - *Entra ID Free:* groups cannot be assigned to an application, and
+    "groups assigned to the application" would send an empty claim (nobody
+    could use a database). Emit **security groups** instead: the token then
+    lists every security group the user belongs to, nested ones included.
+    A user in more than 200 groups gets an overage claim instead of a list,
+    and athens refuses that sign-in (ADR-007).
+- **Who may sign in:** with P1/P2, *Assignment required = Yes* on the
+  enterprise application. With Free, or in addition, `oidc.allowedGroups`:
+  only members of one of these groups may sign in; everyone else gets "not
+  authorized for this application". Without either, every user of the
+  tenant can sign in, and sees nothing unless an `access` annotation names
+  one of their groups.
 - Group changes take effect at the next sign-in. Sessions last
   `auth.sessionTTL` (8 h) and end after `auth.idleTTL` (1 h) without
   activity.
@@ -88,8 +100,8 @@ through athens.
 
 ## Group names or IDs
 
-Entra ID puts group **object IDs** in tokens by default, so the simplest
-annotation uses IDs:
+Entra ID puts group **object IDs** in tokens, so the simplest annotation uses
+IDs (Entra admin center → Groups → the group → Overview → Object ID):
 
 ```yaml
 athens.warewave.io/access: "7c1f0f6e-1111-4aaa-9bbb-000000000001:rw"
@@ -97,13 +109,8 @@ athens.warewave.io/access: "7c1f0f6e-1111-4aaa-9bbb-000000000001:rw"
 
 For readable annotations, either:
 
-1. **Let Entra send group names.** In the app registration's **Token
-   configuration**, edit the groups claim. Tick **Emit group name for
-   cloud-only groups** (available with "Groups assigned to the application"),
-   or choose `sAMAccountName` for groups synced from on-premises AD. The
-   names then appear in the token and work directly in annotations, and in
-   `authz.adminGroups` / `oidc.allowedGroups` too.
-2. **Or map names to IDs** in the athens configuration:
+1. **Map names to IDs** in the athens configuration. This works with every
+   licence and groups claim:
 
    ```yaml
    authz:
@@ -114,6 +121,16 @@ For readable annotations, either:
 
    An entry matches when the user has the aliased ID or a group literally
    named like the entry.
+2. **Or let Entra send group names.** In the app registration's **Token
+   configuration**, edit the groups claim:
+   - **Emit group name for cloud-only groups** sends display names, but only
+     together with "Groups assigned to the application" (Entra ID P1/P2).
+   - `sAMAccountName` sends names for groups synced from on-premises AD,
+     with any groups claim.
+
+   The names then work directly in annotations, `authz.adminGroups` and
+   `oidc.allowedGroups`. With "Security groups" on a Free tenant, cloud-only
+   groups stay IDs, so use aliases.
 
 ## How the level is decided
 

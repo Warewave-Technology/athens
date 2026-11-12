@@ -94,11 +94,15 @@ Authorization Code + PKCE, confidential client (client secret) in v1.
   redirect protection).
 
 ### 5.2 Groups
-- Entra App registration must set `groupMembershipClaims = "ApplicationGroup"`
-  (only groups assigned to the enterprise app are emitted) or `SecurityGroup`.
+- Entra App registration sets `groupMembershipClaims` to `ApplicationGroup`
+  (only groups assigned to the enterprise app are emitted; needs Entra ID
+  P1/P2 for group assignment) or `SecurityGroup` (every security group of the
+  user; the option for Free tenants). `ApplicationGroup` without assigned
+  groups yields an empty claim.
 - Groups overage (`_claim_names.groups` present, >200 groups): v1 rejects login
   with a clear error page telling the admin to use ApplicationGroup. (Graph API
-  fallback is out of scope, see ADR-007.)
+  fallback is out of scope, see ADR-007.) Free tenants with such users have no
+  workaround in v1 other than reducing the user's group memberships.
 - `oidc.allowedGroups` (optional): if set, user must be in at least one, else 403
   page "not authorized for this application".
 
