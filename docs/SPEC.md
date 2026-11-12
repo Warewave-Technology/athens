@@ -424,4 +424,4 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
 - Whether `write` is ever granted on production targets (default: allowed
   but with mandatory confirmation, §7.3).
 - Design files to be placed under `docs/design/` (until then: the Gruvbox
-  theme, ADR-019).
+  theme, ADR-025).
