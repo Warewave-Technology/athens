@@ -75,14 +75,17 @@
   box-shadow: var(--focus);
 }
 
+/* Microsoft's dark fill (#2f2f2f) disappears on the Gruvbox card (#32302f):
+   use the darkest Gruvbox tone with a visible edge instead */
 :root[data-theme="dark"] .ms-btn {
-  background: #2f2f2f;
-  border-color: #2f2f2f;
+  background: #1d2021; /* bg0_h */
+  border-color: #665c54; /* bg3 */
   color: #ffffff;
 }
 
 :root[data-theme="dark"] .ms-btn:hover {
-  background: #3b3b3b;
+  background: #141617;
+  border-color: #7c6f64; /* bg4 */
 }
 
 .login-help {
