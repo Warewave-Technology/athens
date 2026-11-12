@@ -1,8 +1,9 @@
-# CLAUDE.md — dbview
+# CLAUDE.md — athens
 
 In-cluster PostgreSQL web client (pg-view-like) with Microsoft Entra ID SSO and
 automatic discovery of PostgreSQL instances in target Kubernetes namespaces.
-Working name: `dbview` (rename later; keep names centralized in `internal/version`).
+Product name: `athens`. Module `github.com/Warewave-Technology/athens`, image
+`ghcr.io/warewave-technology/athens`. Keep names centralized in `internal/version`.
 
 ## Read first
 - `docs/SPEC.md`      — scope, architecture, security model (source of truth)
@@ -28,7 +29,7 @@ Working name: `dbview` (rename later; keep names centralized in `internal/versio
 
 ## Layout
 ```
-cmd/dbview/            main: config load, wiring, graceful shutdown
+cmd/athens/            main: config load, wiring, graceful shutdown
 internal/config/       config struct, YAML + env override, validation
 internal/auth/         OIDC login/callback, sessions, CSRF, middleware
 internal/authz/        rule evaluation (groups -> target/db -> level)
@@ -45,7 +46,7 @@ internal/httpapi/      handlers, routing, error model, security headers
 internal/metrics/      prometheus collectors
 internal/version/      name, version, build info
 web/                   React app (Vite); build output web/dist embedded
-deploy/helm/dbview/    Helm chart
+deploy/helm/athens/    Helm chart
 hack/kind/             kind e2e env: CNPG, Zalando, bitnami, plain sts fixtures
 ```
 

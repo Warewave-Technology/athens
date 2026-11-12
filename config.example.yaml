@@ -1,17 +1,17 @@
-# dbview configuration. Every scalar can be overridden via env:
-# DBVIEW_<PATH_IN_UPPER_SNAKE>, e.g. DBVIEW_OIDC_CLIENTSECRET, DBVIEW_AUTH_SESSIONKEY
+# athens configuration. Every scalar can be overridden via env:
+# ATHENS_<PATH_IN_UPPER_SNAKE>, e.g. ATHENS_OIDC_CLIENTSECRET, ATHENS_AUTH_SESSIONKEY
 
 server:
   listen: ":8080"
   metricsListen: ":9090"
-  baseURL: "https://dbview.example.com"   # external URL, used for redirects and Origin checks
+  baseURL: "https://athens.example.com"   # external URL, used for redirects and Origin checks
   trustedProxies: ["10.0.0.0/8"]           # CIDRs allowed to set X-Forwarded-For
   insecureDev: false                       # allow http baseURL, no HSTS (local dev only)
 
 oidc:
   issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
   clientID: "<APP_CLIENT_ID>"
-  clientSecret: ""                         # from env DBVIEW_OIDC_CLIENTSECRET
+  clientSecret: ""                         # from env ATHENS_OIDC_CLIENTSECRET
   redirectPath: "/auth/callback"
   scopes: ["openid", "profile", "email"]
   allowedGroups: []                        # optional: Entra group object IDs allowed to log in at all
@@ -20,7 +20,7 @@ oidc:
     tokenFile: "/var/run/secrets/azure/tokens/azure-identity-token"
 
 auth:
-  sessionKey: ""                           # 32+ bytes base64, from env DBVIEW_AUTH_SESSIONKEY
+  sessionKey: ""                           # 32+ bytes base64, from env ATHENS_AUTH_SESSIONKEY
   sessionTTL: 8h
   idleTTL: 1h
 
@@ -49,7 +49,7 @@ discovery:
   useFQDN: false
   clusterDomain: "cluster.local"
   defaultSSLMode: "prefer"
-  annotationPrefix: "dbview.warewave.io"
+  annotationPrefix: "athens.warewave.io"
   cnpg:
     enabled: true
     useSuperuser: false
@@ -78,7 +78,7 @@ audit:
   retentionDays: 90
 
 store:
-  path: "/data/dbview.db"
+  path: "/data/athens.db"
 
 log:
   level: info                              # debug|info|warn|error

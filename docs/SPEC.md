@@ -1,4 +1,4 @@
-# dbview — Specification
+# athens — Specification
 
 Status: v1 draft for implementation. Owner: Warewave.
 
@@ -36,10 +36,10 @@ A user with no matching rule for a target does not see that target at all
 ## 3. Architecture
 
 ```
-Browser ──HTTPS──> Ingress ──> dbview (1 pod)
+Browser ──HTTPS──> Ingress ──> athens (1 pod)
                                  │  ├─ OIDC (login.microsoftonline.com)
                                  │  ├─ kube-apiserver (informers, GET secrets)
-                                 │  ├─ SQLite on PVC (/data/dbview.db)
+                                 │  ├─ SQLite on PVC (/data/athens.db)
                                  │  └─ pgxpool ──> Postgres targets (ns A, B, ...)
 ```
 
@@ -57,8 +57,8 @@ Single Go binary serves: SPA static assets, `/api/v1/*`, `/auth/*`,
 
 ## 4. Configuration
 
-File `/etc/dbview/config.yaml` (path via `--config`), every scalar overridable
-by env `DBVIEW_<UPPER_SNAKE_PATH>` (e.g. `DBVIEW_OIDC_CLIENTSECRET`).
+File `/etc/athens/config.yaml` (path via `--config`), every scalar overridable
+by env `ATHENS_<UPPER_SNAKE_PATH>` (e.g. `ATHENS_OIDC_CLIENTSECRET`).
 Secrets (client secret, session key) should come from env/Secret, not the file.
 See `config.example.yaml` for the full annotated example. Validation rules:
 
@@ -76,7 +76,7 @@ See `config.example.yaml` for the full annotated example. Validation rules:
 Authorization Code + PKCE, confidential client (client secret) in v1.
 
 - `GET /auth/login?returnTo=/path` → generate `state`, `nonce`, PKCE verifier;
-  store in a short-lived (10 min) HttpOnly cookie `dbview_auth` (encrypted with
+  store in a short-lived (10 min) HttpOnly cookie `athens_auth` (encrypted with
   session key, AES-GCM). Redirect to Entra authorize endpoint with scopes
   `openid profile email`.
 - `GET /auth/callback` → verify state, exchange code, verify ID token
@@ -96,19 +96,25 @@ Authorization Code + PKCE, confidential client (client secret) in v1.
   page "not authorized for this application".
 
 ### 5.3 Sessions
-- Server-side sessions in SQLite. Cookie `dbview_session` = 32 random bytes
+- Server-side sessions in SQLite. Cookie `athens_session` = 32 random bytes
   base64url. Flags: HttpOnly, Secure, SameSite=Lax, Path=/.
 - Session stores user id, email, name, groups (JSON), created_at, expires_at,
   last_seen_at. Absolute TTL `auth.sessionTTL` (default 8h), idle TTL
   `auth.idleTTL` (default 1h). Expired sessions purged every 10 min.
 - Groups are snapshotted at login; changes in Entra apply at next login.
-- `POST /auth/logout` deletes session, clears cookie, redirects to Entra
-  `end_session_endpoint` with `post_logout_redirect_uri = baseURL`.
+- `POST /auth/logout` (HTML form post with hidden field `csrf` = session CSRF
+  token, plus the Origin check of §5.4) deletes session, clears cookies,
+  redirects (303) to Entra `end_session_endpoint` with
+  `post_logout_redirect_uri = baseURL`. Without a valid token the session is
+  kept and the user is redirected to `/` (ADR-015).
+- Cookies are `SameSite=Lax` (not Strict): the OIDC callback is a top-level
+  cross-site GET from Entra and must carry `athens_auth`. Response mode is
+  `query` (not `form_post`) for the same reason.
 
 ### 5.4 CSRF
 A random CSRF token is generated per session (stored in `sessions.csrf_token`)
-and exposed to the SPA via the non-HttpOnly cookie `dbview_csrf`. All non-GET
-`/api/*` requests require header `X-DBView-CSRF` equal to the session's token
+and exposed to the SPA via the non-HttpOnly cookie `athens_csrf`. All non-GET
+`/api/*` requests require header `X-Athens-CSRF` equal to the session's token
 (constant-time compare) AND `Origin` (or `Referer`) host equal to `baseURL`
 host. Otherwise 403 `csrf`. The session cookie value is stored only as
 SHA-256 in the DB.
@@ -121,7 +127,8 @@ DISCOVERY.md). Inside a target, databases are listed live from `pg_database`
 (`datallowconn AND NOT datistemplate`), filtered by authz `databases` globs.
 
 Target ID: `<namespace>/<name>` where name is the discovered logical name
-(service or cluster name). Must be URL-safe; API uses it URL-encoded.
+(service or cluster name). Both parts are DNS-1123 labels, so the API addresses
+a target as two path segments `/targets/{ns}/{name}` (no `%2F`, ADR-012).
 
 ### 6.2 Pool manager (`internal/pgconn`)
 - Key: `(targetID, database, credentialKind)` where credentialKind ∈ {rw, ro}.
@@ -140,7 +147,7 @@ Every operation (catalog, grid, editor) runs as:
 
 ```
 BEGIN [READ ONLY]            -- READ ONLY when effective level == read
-SET LOCAL application_name = 'dbview:<email>'      -- truncated to 63 bytes
+SET LOCAL application_name = 'athens:<email>'      -- truncated to 63 bytes
 SET LOCAL statement_timeout = '<limits.statementTimeout>'
 SET LOCAL lock_timeout = '<limits.lockTimeout>'
 SET LOCAL idle_in_transaction_session_timeout = '<limits.statementTimeout*2>'
@@ -150,6 +157,13 @@ COMMIT | ROLLBACK
 
 Use `pgx.TxOptions{AccessMode: pgx.ReadOnly}` for read; values for SET LOCAL
 via `set_config($1, $2, true)` with bind params (no string interpolation).
+
+After every SQL editor execution the connection is reset with `DISCARD ALL`
+before it returns to the pool (user SQL can change session state even inside a
+READ ONLY tx, e.g. `set_config(..., false)`, advisory locks, temp tables). If
+the reset fails the connection is destroyed. Pools use
+`pgx.QueryExecModeExec` (no server-side prepared statement cache), which is
+compatible with `DISCARD ALL` and returns TEXT results (ADR-011).
 
 When effective level is `read` and target has a `ro` credential, use it
 (defense in depth). Otherwise `rw` credential + READ ONLY transaction.
@@ -184,14 +198,31 @@ From the parse tree's top node:
 
 | Class | Statements |
 |---|---|
-| `read` | SELECT (no INTO, no data-modifying CTE, no FOR UPDATE/SHARE), EXPLAIN without ANALYZE, SHOW, VALUES, TABLE |
+| `read` | SELECT (no INTO, no data-modifying CTE, no FOR UPDATE/SHARE, no side-effect function), EXPLAIN without ANALYZE, SHOW, VALUES, TABLE |
 | `dml` | INSERT, UPDATE, DELETE, MERGE, COPY FROM, SELECT INTO, SELECT ... FOR UPDATE, data-modifying CTE, EXPLAIN ANALYZE of dml |
 | `ddl` | CREATE/ALTER/DROP/COMMENT/GRANT/REVOKE/TRUNCATE/REINDEX/VACUUM/CLUSTER/REFRESH MATERIALIZED VIEW |
-| `session` | SET, RESET, BEGIN, COMMIT, ROLLBACK, LISTEN, etc. → rejected 400 `unsupported_statement` (transactions are managed by dbview) |
+| `session` | SET, RESET, BEGIN, COMMIT, ROLLBACK, SAVEPOINT, LISTEN, NOTIFY, PREPARE, EXECUTE, DEALLOCATE, DISCARD, DECLARE/FETCH/CLOSE cursor, LOCK outside data access, LOAD, etc. → rejected 400 `unsupported_statement` (transactions are managed by athens) |
+| `nontx` | statements PostgreSQL refuses inside a transaction block: VACUUM, CREATE/DROP DATABASE, CREATE/DROP TABLESPACE, ALTER SYSTEM, `CREATE INDEX CONCURRENTLY`, `DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `ALTER TYPE ... ADD VALUE` on PG < 12 → rejected 400 `unsupported_statement` in v1 (ADR-013) |
 | `other` | anything else → treated as `ddl` |
 
 `destructive` flag = DROP *, TRUNCATE, ALTER TABLE ... DROP COLUMN/CONSTRAINT,
 DELETE or UPDATE without WHERE, DELETE/UPDATE where WHERE is a constant true.
+
+EXPLAIN: with `ANALYZE` the class (and destructive flag) of the explained
+statement applies; without `ANALYZE` it is `read` (nothing executes).
+
+Side-effect functions: a `SELECT`/`VALUES` that calls a function from the
+side-effect list is classified `dml` (ADR-014), so `read` users cannot run it.
+The list (schema-qualified or not, case-insensitive): `pg_terminate_backend`,
+`pg_cancel_backend`, `pg_reload_conf`, `pg_rotate_logfile`, `pg_switch_wal`,
+`pg_create_restore_point`, `pg_promote`, `pg_wal_replay_pause`,
+`pg_wal_replay_resume`, `pg_create_*_replication_slot`,
+`pg_drop_replication_slot`, `pg_replication_origin_*`,
+`pg_logical_emit_message`, `pg_file_write`, `pg_file_rename`, `pg_file_unlink`,
+`lo_import`, `lo_export`, `lo_unlink`, `lo_create`, `lo_from_bytea`, `lo_put`,
+`dblink*`, `set_config`, `pg_advisory_*lock*` (not `*unlock*`), `pg_notify`,
+`nextval`, `setval`, `pg_stat_reset*`, `pg_import_system_collations`,
+`txid_current`, `pg_current_xact_id`. This is defense in depth, not a sandbox.
 
 ### 7.3 Enforcement
 - level `read`: class must be `read` (EXPLAIN ANALYZE of SELECT allowed). Else
@@ -271,7 +302,7 @@ Retention: `audit.retentionDays` (default 90), purge daily.
 
 ## 11. Observability
 
-Metrics (prefix `dbview_`):
+Metrics (prefix `athens_`):
 - `http_requests_total{route,method,code}`, `http_request_duration_seconds{route}`
 - `queries_total{target,class,result}`, `query_duration_seconds{class}`
 - `discovery_targets{namespace,source}`, `discovery_errors_total{source,reason}`
@@ -330,7 +361,7 @@ Screens / components:
 State: TanStack Query for server state; minimal local state (zustand allowed)
 for tabs/layout. Tabs and layout persisted in localStorage per user email.
 
-## 14. Deployment (Helm chart `deploy/helm/dbview`)
+## 14. Deployment (Helm chart `deploy/helm/athens`)
 
 - Deployment, `replicas: 1`, `strategy: Recreate` (SQLite).
 - PVC 1Gi for `/data` (storageClass configurable).
@@ -338,7 +369,7 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
   drop ALL caps, `seccompProfile: RuntimeDefault`, `automountServiceAccountToken: true`.
 - ServiceAccount + for each `discovery.namespaces` entry a `Role` + `RoleBinding`:
   - `apps`: statefulsets, deployments → get, list, watch
-  - core: services, pods → get, list, watch
+  - core: services → get, list, watch (no pods, ADR-016)
   - core: secrets → **get only** (no list/watch; ADR-005)
   - `postgresql.cnpg.io`: clusters → get, list, watch (if `cnpg.enabled`)
   - `acid.zalan.do`: postgresqls → get, list, watch (if `zalando.enabled`)
@@ -367,8 +398,8 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
   deployment; assert discovered targets and a query through the API.
 
 ## 16. Open items (to confirm with owner; defaults apply until then)
-- Product name / module path (default `dbview`, `github.com/warewave/dbview`).
 - Target namespaces and group → rule mapping for the first deployment.
 - Whether `write` is ever granted on production targets (default: allowed
   but with mandatory confirmation, §7.3).
-- Design files to be placed under `docs/design/`.
+- Design files to be placed under `docs/design/` (until then: Gruvbox
+  light/dark, dense pg-view-like layout).

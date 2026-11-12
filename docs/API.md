@@ -1,8 +1,9 @@
 # REST API v1
 
 Base: `/api/v1`. JSON in/out, UTF-8. Auth: session cookie. Mutations need CSRF
-header (SPEC §5.4). Path params `{tid}` = URL-encoded target ID
-(`ns%2Fname`), `{db}`, `{schema}`, `{rel}` URL-encoded identifiers.
+header (SPEC §5.4). A target is addressed by two path segments `{ns}/{name}`
+(written `{tid}` below, e.g. `/targets/payments/orders-db/...`; ADR-012).
+`{db}`, `{schema}`, `{rel}` are URL-encoded identifiers.
 
 ## Error model
 ```json
@@ -25,7 +26,7 @@ header (SPEC §5.4). Path params `{tid}` = URL-encoded target ID
 ## Auth (outside /api)
 - `GET  /auth/login?returnTo=/x` → 302 Entra
 - `GET  /auth/callback?code&state` → 302 returnTo
-- `POST /auth/logout` → 302 Entra end session
+- `POST /auth/logout` (form field `csrf`) → 303 Entra end session
 - `GET  /api/v1/me` → `{ "id","email","name","isAdmin":bool, "readOnlyGlobal":bool }`
 
 ## Targets

@@ -52,3 +52,46 @@ Multi-statement scripts are a possible v2 feature.
 Discovered credentials are usually owner/superuser. App-level rules + READ ONLY
 transactions are the baseline; a dedicated read-only Postgres role referenced
 via annotation is the recommended hardening for production targets.
+
+## ADR-011 Reset editor connections with DISCARD ALL; exec mode without statement cache
+User SQL can change session state that survives the transaction even in READ
+ONLY mode (`set_config(..., false)`, `pg_advisory_lock`, temp tables, `SET ROLE`
+via `set_config('role', ...)`). On a shared pool this leaks into the next
+user's request. → After every editor execution run `DISCARD ALL` before the
+connection is released; destroy the connection if that fails. Pools use
+`pgx.QueryExecModeExec` (unnamed statements, text results), so `DISCARD ALL`
+never invalidates a client-side prepared statement cache.
+Consequence: one extra round trip per editor query; no prepared statement reuse.
+
+## ADR-012 Target addressed by two path segments, not an encoded `/`
+`ns%2Fname` in a path is decoded, rejected or normalized by many ingress
+controllers and load balancers. Namespace and name are DNS-1123 labels and can
+never contain `/`. → API paths use `/targets/{ns}/{name}/...` and
+`/drafts/{ns}/{name}/{db}`. The JSON field `id` stays `<ns>/<name>`.
+
+## ADR-013 Reject statements that cannot run in a transaction block (v1)
+Hard rule 4 runs every statement in a transaction with `SET LOCAL` guards.
+VACUUM, CREATE/DROP DATABASE, `... CONCURRENTLY`, ALTER SYSTEM etc. fail there
+with a confusing server error. → `sqlclass` marks them `nontx` and the editor
+returns 400 `unsupported_statement` with an explanatory message. Running them
+outside a transaction with session-level guards is a possible v2 feature.
+
+## ADR-014 Side-effect function denylist for read level
+READ ONLY transactions still allow `pg_terminate_backend`, `pg_reload_conf`,
+`lo_export`, `dblink`, `set_config`, advisory locks. Discovered credentials are
+usually owners/superusers. → `sqlclass` walks the whole parse tree; any call to
+a function in the SPEC §7.2 list makes the statement `dml`, so `read` users get
+403. It is a denylist (defense in depth); a read-only DB role (ADR-010) stays
+the strong control.
+
+## ADR-015 CSRF protection for logout
+`POST /auth/logout` lives outside `/api` and was not covered by §5.4. A forced
+logout is low impact but trivial to prevent. → The SPA submits a regular form
+(full-page navigation is needed for the Entra redirect) with a hidden `csrf`
+field; the server checks it plus Origin before deleting the session.
+
+## ADR-016 No Pods informer / RBAC
+Discovery works from StatefulSets, Deployments, Services and operator CRs; the
+headless fallback derives `<sts>-0` from the StatefulSet name. Operator-owned
+pods only matter for CNPG, which creates no StatefulSets the generic source
+could see. → Do not watch pods; Roles grant no access to pods.

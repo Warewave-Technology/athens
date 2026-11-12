@@ -1,10 +1,6 @@
--- dbview app store, SQLite. Applied in order by internal/store (embedded).
+-- athens app store, SQLite. Applied in order by internal/store (embedded).
+-- schema_migrations(version, applied_at) is created by the migrator itself.
 -- PRAGMAs set at open: journal_mode=WAL, foreign_keys=ON, busy_timeout=5000, synchronous=NORMAL.
-
-CREATE TABLE schema_migrations (
-  version     INTEGER PRIMARY KEY,
-  applied_at  TEXT NOT NULL                         -- RFC3339 UTC
-);
 
 CREATE TABLE users (
   id            TEXT PRIMARY KEY,                   -- Entra oid

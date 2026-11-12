@@ -7,7 +7,7 @@ MVP = M0–M6 (read-only grid). M7 adds grid editing. M8 = hardening extras.
 ---
 
 ## M0 — Repo, build, CI
-- [ ] `go mod init github.com/warewave/dbview`, Go 1.23, layout from CLAUDE.md
+- [ ] `go mod init github.com/Warewave-Technology/athens`, Go 1.23, layout from CLAUDE.md
 - [ ] `internal/version` (name, version, commit, buildDate via ldflags)
 - [ ] `web/`: Vite + React + TS + pnpm, ESLint, Prettier, TanStack Query, router
 - [ ] `go:embed web/dist`; `--dev` flag proxies non-API paths to Vite (:5173)
@@ -58,7 +58,7 @@ secrets `get` only is sufficient (e2e runs with chart-generated Roles).
 
 **Accept:** user without matching rule gets 404 for target and it is absent
 from `/targets`; `application_name` visible in `pg_stat_activity` as
-`dbview:<email>`; read-level user cannot write even via catalog path (READ ONLY
+`athens:<email>`; read-level user cannot write even via catalog path (READ ONLY
 tx verified by integration test); rotated secret password → next request
 succeeds after one retry.
 
@@ -90,7 +90,7 @@ cancels within 1s via button; statement_timeout → 504; two statements → 400;
 - [ ] Admin pages: audit log (filters, paging), discovery status, pool status
 - [ ] All metrics from SPEC §11; ServiceMonitor template
 - [ ] Helm chart per SPEC §14 incl. per-namespace Roles, NetworkPolicy, PSS restricted compliant, values schema (`values.schema.json`)
-- [ ] `hack/kind`: script to create cluster, install CNPG + Zalando operators, bitnami chart, plain sts fixtures, mockoidc, dbview chart; `make e2e` runs API-level e2e
+- [ ] `hack/kind`: script to create cluster, install CNPG + Zalando operators, bitnami chart, plain sts fixtures, mockoidc, athens chart; `make e2e` runs API-level e2e
 - [ ] Docs: `README.md` (install, Entra app registration steps incl. redirect URI, `groupMembershipClaims`, client secret, group assignment), `docs/OPERATIONS.md` (backup of PVC, upgrades, rotating secrets, troubleshooting)
 - [ ] Security review checklist: no secrets in logs (grep test on log output in e2e), headers present, CSRF on all mutations (route table test), authz on all target routes (route table test)
 

@@ -57,7 +57,7 @@ Rules:
 
 For each namespace in `discovery.namespaces`, a namespaced
 `SharedInformerFactory` (`informers.WithNamespace`) for StatefulSets,
-Deployments, Services, Pods(optional, only for headless fallback). CRD sources
+Deployments and Services (no Pods; ADR-016). CRD sources
 via `dynamicinformer.NewFilteredDynamicSharedInformerFactory` per namespace,
 started only if the CRD exists (check via discovery API at startup and every
 5 min; start informer when it appears).
@@ -79,7 +79,7 @@ Order: `annotation` > `cnpg` > `zalando` > `generic`.
     (group `postgresql.cnpg.io`)
   - sts with label `application: spilo` or ownerReference kind `postgresql`
     (group `acid.zalan.do`)
-- Opt-out: annotation `dbview.warewave.io/enabled: "false"` on the workload,
+- Opt-out: annotation `athens.warewave.io/enabled: "false"` on the workload,
   Service or CR removes it from all sources.
 - Name collisions (two targets same ID): append `-<kind-short>` suffix
   (`-sts`, `-deploy`), add warning.
@@ -89,7 +89,7 @@ Order: `annotation` > `cnpg` > `zalando` > `generic`.
 ### 4.1 annotation (explicit, highest priority)
 On a StatefulSet, Deployment or Service:
 
-| Annotation (prefix `dbview.warewave.io/`) | Required | Default |
+| Annotation (prefix `athens.warewave.io/`) | Required | Default |
 |---|---|---|
 | `enabled` | yes, `"true"` | |
 | `service` | no (if on workload) | auto-match (§4.5) ; on a Service: itself |
@@ -117,7 +117,7 @@ not registered, warning recorded.
 - Superuser `<cluster>-superuser` used **only** if `discovery.cnpg.useSuperuser`
   is true AND `spec.enableSuperuserAccess` is true. Default false.
 - RO credential: not auto-derived (CNPG has no RO user by default); annotation
-  `dbview.warewave.io/readonly-secret` on the Cluster CR is honoured.
+  `athens.warewave.io/readonly-secret` on the Cluster CR is honoured.
 - DefaultDB = `spec.bootstrap.initdb.database` or `app`.
 - SSLMode default `require` (CNPG always serves TLS); `verify-full` possible
   with CA secret `<cluster>-ca` key `ca.crt` when `discovery.cnpg.verifyTLS`.
@@ -126,7 +126,7 @@ not registered, warning recorded.
 ### 4.3 zalando (`acid.zalan.do/v1`, kind `postgresql`)
 - Name = metadata.name. Host = `<name>.<ns>.svc` (master service), port 5432.
 - Users: `spec.users` map. Choose credential user:
-  1. annotation `dbview.warewave.io/user` on CR, else
+  1. annotation `athens.warewave.io/user` on CR, else
   2. owner of first database in `spec.databases` (sorted by key), else
   3. `postgres` only if `discovery.zalando.useSuperuser`.
 - Secret name from template `discovery.zalando.secretTemplate`, default
