@@ -123,7 +123,7 @@ jobs:
           helm install athens ${CHART_REPO}/athens --version ${v} -n athens --create-namespace -f values.yaml
           \`\`\`
 
-          Image: \`${IMAGE}:${v}\` (\`${DIGEST}\`), linux/amd64 and linux/arm64, signed with cosign (keyless):
+          Image: \`${IMAGE}:${v}\` (\`${DIGEST}\`), linux/amd64 and linux/arm64, signed with cosign (keyless; verify with cosign v3 or later):
 
           \`\`\`bash
           cosign verify ${IMAGE}:${v} \\

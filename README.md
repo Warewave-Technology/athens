@@ -232,7 +232,7 @@ The chart installs the image `ghcr.io/warewave-technology/athens` of the same
 version (linux/amd64 and linux/arm64). Releases are listed on the
 [releases page](https://github.com/Warewave-Technology/athens/releases); every
 image is signed with cosign (keyless), and the release notes show the
-`cosign verify` command. To install from a checkout instead, use
+`cosign verify` command (cosign v3 or later). To install from a checkout instead, use
 `deploy/helm/athens` as the chart.
 
 ```bash
