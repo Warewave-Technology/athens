@@ -1,0 +1,91 @@
+{
+  "targets": [
+    {
+      "id": "demo/payments-db",
+      "namespace": "demo",
+      "name": "payments-db",
+      "displayName": "Payments",
+      "source": "cnpg",
+      "owner": {
+        "kind": "Cluster",
+        "name": "payments-db",
+        "uid": "uid-cnpg"
+      },
+      "service": "payments-db-rw",
+      "host": "payments-db-rw.demo.svc",
+      "port": 5432,
+      "databases": [
+        "payments"
+      ],
+      "defaultDB": "payments",
+      "sslMode": "require",
+      "environment": "production",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "payments-db-app",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "payments-db-app",
+            "key": "password"
+          }
+        }
+      },
+      "ro": {
+        "user": {
+          "secret": {
+            "name": "payments-db-readonly",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "payments-db-readonly",
+            "key": "password"
+          }
+        }
+      },
+      "labels": {
+        "team": "payments"
+      }
+    },
+    {
+      "id": "demo/reports",
+      "namespace": "demo",
+      "name": "reports",
+      "displayName": "reports",
+      "source": "cnpg",
+      "owner": {
+        "kind": "Cluster",
+        "name": "reports",
+        "uid": "uid-cnpg-2"
+      },
+      "service": "reports-rw",
+      "host": "reports-rw.demo.svc",
+      "port": 5432,
+      "databases": [
+        "app"
+      ],
+      "defaultDB": "app",
+      "sslMode": "require",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "reports-owner",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "reports-owner",
+            "key": "password"
+          }
+        }
+      }
+    }
+  ],
+  "problems": null
+}

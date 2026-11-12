@@ -1,0 +1,16 @@
+{
+  "targets": [],
+  "problems": [
+    {
+      "namespace": "demo",
+      "object": {
+        "kind": "Deployment",
+        "name": "lonely",
+        "uid": "uid-lonely"
+      },
+      "source": "generic",
+      "reason": "no_service",
+      "message": "no Service selects the pods and exposes port 5432"
+    }
+  ]
+}

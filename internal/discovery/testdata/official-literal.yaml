@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: pg, uid: uid-pg, labels: {team: core}}
+spec:
+  serviceName: pg
+  selector: {matchLabels: {app: pg}}
+  template:
+    metadata: {labels: {app: pg}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports: [{containerPort: 5432}]
+          env:
+            - {name: POSTGRES_USER, value: app}
+            - {name: POSTGRES_PASSWORD, value: s3cr3t-literal-value}
+            - {name: POSTGRES_DB, value: appdb}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: pg}
+spec:
+  selector: {app: pg}
+  ports: [{name: pg, port: 5432}]

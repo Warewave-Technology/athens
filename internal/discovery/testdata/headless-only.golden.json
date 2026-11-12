@@ -1,0 +1,36 @@
+{
+  "targets": [
+    {
+      "id": "demo/solo",
+      "namespace": "demo",
+      "name": "solo",
+      "displayName": "solo",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "solo",
+        "uid": "uid-solo"
+      },
+      "service": "solo-hl",
+      "host": "solo-0.solo-hl.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "solo-pw",
+            "key": "pw"
+          }
+        }
+      },
+      "warnings": [
+        "only headless service \"solo-hl\" matches; assuming pod solo-0 is the primary"
+      ]
+    }
+  ],
+  "problems": null
+}

@@ -1,0 +1,50 @@
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata: {name: acid-minimal, uid: uid-zalando, labels: {team: acid}}
+spec:
+  teamId: acid
+  numberOfInstances: 2
+  users:
+    zalando: [superuser, createdb]
+    foo_user: []
+  databases:
+    app: foo_user
+    zoo: zalando
+  postgresql: {version: "16"}
+---
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata: {name: acid-nousers, uid: uid-zalando-2}
+spec:
+  teamId: acid
+  numberOfInstances: 1
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: foo-user.acid-minimal.credentials.postgresql.acid.zalan.do}
+stringData: {username: foo_user, password: zalando-foo-pw}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: acid-minimal
+  labels: {application: spilo, cluster-name: acid-minimal}
+  ownerReferences:
+    - {apiVersion: acid.zalan.do/v1, kind: postgresql, name: acid-minimal, uid: uid-zalando}
+spec:
+  selector: {matchLabels: {application: spilo, cluster-name: acid-minimal}}
+  template:
+    metadata: {labels: {application: spilo, cluster-name: acid-minimal}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - {name: POSTGRES_PASSWORD, value: never-used}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: acid-minimal}
+spec:
+  selector: {application: spilo, cluster-name: acid-minimal, spilo-role: master}
+  ports: [{name: postgresql, port: 5432, targetPort: 5432}]

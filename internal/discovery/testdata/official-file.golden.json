@@ -1,0 +1,41 @@
+{
+  "targets": [
+    {
+      "id": "demo/files",
+      "namespace": "demo",
+      "name": "files",
+      "displayName": "files",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "files",
+        "uid": "uid-files"
+      },
+      "service": "files",
+      "host": "files.demo.svc",
+      "port": 5432,
+      "defaultDBFrom": {
+        "secret": {
+          "name": "files-secret",
+          "key": "username"
+        }
+      },
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "files-secret",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "files-secret",
+            "key": "password"
+          }
+        }
+      }
+    }
+  ],
+  "problems": null
+}

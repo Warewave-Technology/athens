@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: files, uid: uid-files}
+spec:
+  serviceName: files
+  selector: {matchLabels: {app: files}}
+  template:
+    metadata: {labels: {app: files}}
+    spec:
+      volumes:
+        - name: creds
+          secret:
+            secretName: files-secret
+            items:
+              - {key: password, path: pw}
+              - {key: username, path: user}
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          env:
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/db/pw}
+            - {name: POSTGRES_USER_FILE, value: /run/secrets/db/user}
+          volumeMounts:
+            - {name: creds, mountPath: /run/secrets/db, readOnly: true}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: files-secret}
+stringData: {username: filer, password: files-secret-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: files}
+spec:
+  selector: {app: files}
+  ports: [{port: 5432}]

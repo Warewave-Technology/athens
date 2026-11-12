@@ -1,0 +1,51 @@
+{
+  "targets": [
+    {
+      "id": "demo/legacy",
+      "namespace": "demo",
+      "name": "legacy",
+      "displayName": "Legacy CRM",
+      "source": "annotation",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "legacy",
+        "uid": "uid-legacy"
+      },
+      "service": "legacy",
+      "host": "legacy.demo.svc",
+      "port": 5432,
+      "defaultDB": "crm",
+      "sslMode": "require",
+      "environment": "staging",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "legacy-admin",
+            "key": "user"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "legacy-admin",
+            "key": "password"
+          }
+        }
+      },
+      "ro": {
+        "user": {
+          "secret": {
+            "name": "legacy-ro",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "legacy-ro",
+            "key": "password"
+          }
+        }
+      }
+    }
+  ],
+  "problems": null
+}

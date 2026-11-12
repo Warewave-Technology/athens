@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: legacy
+  uid: uid-legacy
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: legacy-admin
+    athens.warewave.io/user-key: user
+    athens.warewave.io/display-name: Legacy CRM
+    athens.warewave.io/environment: staging
+    athens.warewave.io/database: crm
+    athens.warewave.io/readonly-secret: legacy-ro
+    athens.warewave.io/sslmode: require
+spec:
+  serviceName: legacy
+  selector: {matchLabels: {app: legacy}}
+  template:
+    metadata: {labels: {app: legacy}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: legacy-env, key: pw}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: legacy-admin}
+stringData: {user: crm_admin, password: legacy-admin-pw}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: legacy-ro}
+stringData: {username: crm_ro, password: legacy-ro-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: legacy}
+spec:
+  selector: {app: legacy}
+  ports: [{port: 5432}]

@@ -95,3 +95,21 @@ Discovery works from StatefulSets, Deployments, Services and operator CRs; the
 headless fallback derives `<sts>-0` from the StatefulSet name. Operator-owned
 pods only matter for CNPG, which creates no StatefulSets the generic source
 could see. → Do not watch pods; Roles grant no access to pods.
+
+## ADR-017 Credential references as value sources; workload names; ConfigMap get
+DISCOVERY §1 modelled credentials as one Secret with optional fixed user, or a
+literal-env pointer. Real workloads mix sources (user literal, password from a
+Secret; user from a ConfigMap; `_FILE` on a projected volume; database from
+an envFrom Secret). → `CredentialRef{User, Password ValueSource}` where a
+`ValueSource` is exactly one of `literal` (non-secret values only), `secret`
+(name+key), `configMap` (user/db only) or `env` (pointer to a literal env var in
+the pod template, read from the informer cache at connect time). The database
+for the first connection is `defaultDB` or `defaultDBFrom` (a value source,
+e.g. "same as the user secret key") resolved at connect time, else `postgres`.
+Target names for workload-based targets are the workload name (the §3 collision
+rule with `-sts`/`-deploy` suffixes only makes sense that way); annotated
+Services and operator CRs use their own name. Colliding targets all get the
+suffix so no target silently takes over a name.
+Consequence: resolving a user or database from `envFrom.configMapRef` /
+`configMapKeyRef` needs `configmaps: get` in the per-namespace Role (still no
+list/watch).

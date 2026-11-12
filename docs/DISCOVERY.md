@@ -5,6 +5,9 @@ Package: `internal/discovery` (finding targets) and `internal/credentials`
 
 ## 1. Model
 
+> Implemented with the value-source credential model of ADR-017; the struct
+> below is the original sketch.
+
 ```go
 type SourceKind string // "annotation" | "cnpg" | "zalando" | "generic"
 

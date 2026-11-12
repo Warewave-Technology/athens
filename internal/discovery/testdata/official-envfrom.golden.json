@@ -1,0 +1,41 @@
+{
+  "targets": [
+    {
+      "id": "demo/inventory",
+      "namespace": "demo",
+      "name": "inventory",
+      "displayName": "inventory",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "inventory",
+        "uid": "uid-inv"
+      },
+      "service": "inventory",
+      "host": "inventory.demo.svc",
+      "port": 15432,
+      "defaultDBFrom": {
+        "secret": {
+          "name": "inventory-env",
+          "key": "DB"
+        }
+      },
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "inventory-env",
+            "key": "USER"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "inventory-env",
+            "key": "PASSWORD"
+          }
+        }
+      }
+    }
+  ],
+  "problems": null
+}

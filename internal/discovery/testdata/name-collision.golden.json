@@ -1,0 +1,67 @@
+{
+  "targets": [
+    {
+      "id": "demo/db-deploy",
+      "namespace": "demo",
+      "name": "db-deploy",
+      "displayName": "db-deploy",
+      "source": "generic",
+      "owner": {
+        "kind": "Deployment",
+        "name": "db",
+        "uid": "uid-db-deploy"
+      },
+      "service": "db-b",
+      "host": "db-b.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "db-deploy",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "name \"db\" is used by several targets; renamed to \"db-deploy\""
+      ]
+    },
+    {
+      "id": "demo/db-sts",
+      "namespace": "demo",
+      "name": "db-sts",
+      "displayName": "db-sts",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "db",
+        "uid": "uid-db-sts"
+      },
+      "service": "db-a",
+      "host": "db-a.demo.svc",
+      "port": 5432,
+      "defaultDB": "postgres",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "postgres"
+        },
+        "password": {
+          "secret": {
+            "name": "db-sts",
+            "key": "password"
+          }
+        }
+      },
+      "warnings": [
+        "name \"db\" is used by several targets; renamed to \"db-sts\""
+      ]
+    }
+  ],
+  "problems": null
+}

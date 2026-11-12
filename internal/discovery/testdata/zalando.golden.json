@@ -1,0 +1,55 @@
+{
+  "targets": [
+    {
+      "id": "demo/acid-minimal",
+      "namespace": "demo",
+      "name": "acid-minimal",
+      "displayName": "acid-minimal",
+      "source": "zalando",
+      "owner": {
+        "kind": "postgresql",
+        "name": "acid-minimal",
+        "uid": "uid-zalando"
+      },
+      "service": "acid-minimal",
+      "host": "acid-minimal.demo.svc",
+      "port": 5432,
+      "databases": [
+        "app",
+        "zoo"
+      ],
+      "defaultDB": "app",
+      "sslMode": "require",
+      "rw": {
+        "user": {
+          "secret": {
+            "name": "foo-user.acid-minimal.credentials.postgresql.acid.zalan.do",
+            "key": "username"
+          }
+        },
+        "password": {
+          "secret": {
+            "name": "foo-user.acid-minimal.credentials.postgresql.acid.zalan.do",
+            "key": "password"
+          }
+        }
+      },
+      "labels": {
+        "team": "acid"
+      }
+    }
+  ],
+  "problems": [
+    {
+      "namespace": "demo",
+      "object": {
+        "kind": "postgresql",
+        "name": "acid-nousers",
+        "uid": "uid-zalando-2"
+      },
+      "source": "zalando",
+      "reason": "credentials_unresolved",
+      "message": "no database owner in spec.databases and discovery.zalando.useSuperuser is false; set the athens.warewave.io/user annotation"
+    }
+  ]
+}

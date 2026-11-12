@@ -1,0 +1,48 @@
+{
+  "targets": [
+    {
+      "id": "demo/analytics",
+      "namespace": "demo",
+      "name": "analytics",
+      "displayName": "analytics",
+      "source": "annotation",
+      "owner": {
+        "kind": "Service",
+        "name": "analytics"
+      },
+      "service": "analytics",
+      "host": "analytics.demo.svc",
+      "port": 5433,
+      "defaultDB": "analyst",
+      "sslMode": "verify-full",
+      "ca": {
+        "name": "analytics-ca",
+        "key": "ca.crt"
+      },
+      "environment": "development",
+      "rw": {
+        "user": {
+          "literal": "analyst"
+        },
+        "password": {
+          "secret": {
+            "name": "analytics-creds",
+            "key": "password"
+          }
+        }
+      }
+    }
+  ],
+  "problems": [
+    {
+      "namespace": "demo",
+      "object": {
+        "kind": "Service",
+        "name": "broken"
+      },
+      "source": "annotation",
+      "reason": "credentials_unresolved",
+      "message": "annotated Service needs the athens.warewave.io/secret annotation"
+    }
+  ]
+}

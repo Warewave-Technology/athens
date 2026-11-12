@@ -371,6 +371,7 @@ for tabs/layout. Tabs and layout persisted in localStorage per user email.
   - `apps`: statefulsets, deployments → get, list, watch
   - core: services → get, list, watch (no pods, ADR-016)
   - core: secrets → **get only** (no list/watch; ADR-005)
+  - core: configmaps → **get only** (user/db from ConfigMaps; ADR-017)
   - `postgresql.cnpg.io`: clusters → get, list, watch (if `cnpg.enabled`)
   - `acid.zalan.do`: postgresqls → get, list, watch (if `zalando.enabled`)
 - ConfigMap for config.yaml, Secret for client secret + session key

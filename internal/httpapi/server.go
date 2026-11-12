@@ -12,6 +12,7 @@ import (
 	"github.com/Warewave-Technology/athens/internal/auth"
 	"github.com/Warewave-Technology/athens/internal/authz"
 	"github.com/Warewave-Technology/athens/internal/config"
+	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpx"
 	"github.com/Warewave-Technology/athens/internal/reqctx"
 	"github.com/Warewave-Technology/athens/internal/store"
@@ -22,13 +23,14 @@ const maxBodyBytes = 1 << 20
 
 // Deps are the collaborators of the HTTP layer.
 type Deps struct {
-	Config *config.Config
-	Log    *slog.Logger
-	Store  store.Store
-	Auth   *auth.Authenticator
-	Authz  *authz.Authorizer
-	Audit  *audit.Writer
-	SPA    http.Handler
+	Config   *config.Config
+	Log      *slog.Logger
+	Store    store.Store
+	Auth     *auth.Authenticator
+	Authz    *authz.Authorizer
+	Audit    *audit.Writer
+	Registry *discovery.Registry
+	SPA      http.Handler
 	// Dev relaxes the CSP for the Vite dev server (--dev).
 	Dev bool
 	// Ready reports readiness of components beyond the store and OIDC
@@ -92,6 +94,7 @@ func (s *Server) handle(pattern string, h func(http.ResponseWriter, *http.Reques
 
 func (s *Server) routes() {
 	s.handle("GET /me", s.me)
+	s.handle("GET /admin/discovery", s.adminDiscovery)
 	s.handle("GET /version", func(w http.ResponseWriter, _ *http.Request) error {
 		httpx.WriteJSON(w, http.StatusOK, version.Get())
 		return nil

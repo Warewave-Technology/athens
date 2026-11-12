@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: db, uid: uid-db-sts}
+spec:
+  selector: {matchLabels: {app: db, kind: sts}}
+  template:
+    metadata: {labels: {app: db, kind: sts}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: db-sts, key: password}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: db, uid: uid-db-deploy}
+spec:
+  selector: {matchLabels: {app: db, kind: deploy}}
+  template:
+    metadata: {labels: {app: db, kind: deploy}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: db-deploy, key: password}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: db-a}
+spec:
+  selector: {app: db, kind: sts}
+  ports: [{port: 5432}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: db-b}
+spec:
+  selector: {app: db, kind: deploy}
+  ports: [{port: 5432}]
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: db-sts}
+stringData: {password: collision-sts-pw}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: db-deploy}
+stringData: {password: collision-deploy-pw}

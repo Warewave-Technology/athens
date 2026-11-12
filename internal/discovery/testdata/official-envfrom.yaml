@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: inventory, uid: uid-inv}
+spec:
+  serviceName: inventory
+  selector: {matchLabels: {app: inventory}}
+  template:
+    metadata: {labels: {app: inventory}}
+    spec:
+      containers:
+        - name: postgis
+          image: postgis/postgis:16-3.4
+          ports: [{name: postgres, containerPort: 5432}]
+          envFrom:
+            - prefix: POSTGRES_
+              secretRef: {name: inventory-env}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: inventory-env}
+stringData: {USER: inv, PASSWORD: inventory-secret-pw, DB: inventory}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: inventory}
+spec:
+  selector: {app: inventory}
+  ports: [{name: tcp, port: 15432, targetPort: postgres}]

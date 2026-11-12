@@ -1,0 +1,44 @@
+{
+  "targets": [
+    {
+      "id": "demo/pg",
+      "namespace": "demo",
+      "name": "pg",
+      "displayName": "pg",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "pg",
+        "uid": "uid-pg"
+      },
+      "service": "pg",
+      "host": "pg.demo.svc",
+      "port": 5432,
+      "defaultDB": "appdb",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "app"
+        },
+        "password": {
+          "env": {
+            "workload": {
+              "kind": "StatefulSet",
+              "name": "pg",
+              "uid": "uid-pg"
+            },
+            "container": "postgres",
+            "name": "POSTGRES_PASSWORD"
+          }
+        }
+      },
+      "labels": {
+        "team": "core"
+      },
+      "warnings": [
+        "plaintext password in pod spec (POSTGRES_PASSWORD)"
+      ]
+    }
+  ],
+  "problems": null
+}

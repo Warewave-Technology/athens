@@ -15,10 +15,16 @@ import (
 	"syscall"
 	"time"
 
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/Warewave-Technology/athens/internal/audit"
 	"github.com/Warewave-Technology/athens/internal/auth"
 	"github.com/Warewave-Technology/athens/internal/authz"
 	"github.com/Warewave-Technology/athens/internal/config"
+	"github.com/Warewave-Technology/athens/internal/discovery"
 	"github.com/Warewave-Technology/athens/internal/httpapi"
 	"github.com/Warewave-Technology/athens/internal/metrics"
 	"github.com/Warewave-Technology/athens/internal/store"
@@ -30,6 +36,7 @@ func main() {
 	configPath := flag.String("config", "/etc/athens/config.yaml", "path to config.yaml")
 	dev := flag.Bool("dev", false, "proxy the SPA to the Vite dev server")
 	devURL := flag.String("dev-url", "http://localhost:5173", "Vite dev server URL (with --dev)")
+	kubeconfig := flag.String("kubeconfig", "", "kubeconfig path (default: in-cluster, then $KUBECONFIG / ~/.kube/config)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -45,7 +52,7 @@ func main() {
 		os.Exit(2)
 	}
 	log := newLogger(cfg.Log.Level)
-	if err := run(cfg, *dev, *devURL, log); err != nil {
+	if err := run(cfg, *dev, *devURL, *kubeconfig, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -57,7 +64,7 @@ func newLogger(level string) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: l})).With("app", version.Name)
 }
 
-func run(cfg *config.Config, dev bool, devURL string, log *slog.Logger) error {
+func run(cfg *config.Config, dev bool, devURL, kubeconfig string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("starting", "version", version.Get())
@@ -80,6 +87,21 @@ func run(cfg *config.Config, dev bool, devURL string, log *slog.Logger) error {
 	defer cancelBG()
 	bg.Go(func() { store.RunJanitor(bgCtx, st, cfg.Auth.IdleTTL.D(), cfg.Audit.RetentionDays, log) })
 
+	kc, err := kubeClients(kubeconfig)
+	if err != nil {
+		return err
+	}
+	dopt, err := discovery.OptionsFromConfig(cfg.Discovery)
+	if err != nil {
+		return err
+	}
+	registry := discovery.NewRegistry()
+	disc := discovery.NewController(discovery.ControllerOptions{
+		Client: kc.client, Dynamic: kc.dynamic, Discovery: kc.client.Discovery(), Namespaces: cfg.Discovery.Namespaces,
+		Resync: cfg.Discovery.Resync.D(), Options: dopt, Registry: registry, Log: log,
+	})
+	bg.Go(func() { disc.Run(bgCtx, 60*time.Second) })
+
 	spa := httpapi.SPAHandler(web.Dist())
 	if dev {
 		if spa, err = httpapi.DevProxy(devURL); err != nil {
@@ -87,7 +109,8 @@ func run(cfg *config.Config, dev bool, devURL string, log *slog.Logger) error {
 		}
 	}
 	srv := httpapi.New(httpapi.Deps{
-		Config: cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, SPA: spa, Dev: dev,
+		Config: cfg, Log: log, Store: st, Auth: authn, Authz: authz.New(cfg.Authz), Audit: aw, Registry: registry,
+		SPA: spa, Dev: dev, Ready: disc.Synced,
 	})
 
 	servers := []*http.Server{
@@ -125,4 +148,35 @@ func metricsMux() http.Handler {
 	m := http.NewServeMux()
 	m.Handle("GET /metrics", metrics.Handler())
 	return m
+}
+
+type kube struct {
+	client  kubernetes.Interface
+	dynamic dynamic.Interface
+}
+
+func kubeClients(kubeconfig string) (*kube, error) {
+	var rc *rest.Config
+	var err error
+	if kubeconfig == "" {
+		rc, err = rest.InClusterConfig()
+	}
+	if kubeconfig != "" || errors.Is(err, rest.ErrNotInCluster) {
+		rules := clientcmd.NewDefaultClientConfigLoadingRules()
+		rules.ExplicitPath = kubeconfig
+		rc, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("kubernetes config: %w", err)
+	}
+	rc.UserAgent = version.Name + "/" + version.Version
+	c, err := kubernetes.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+	d, err := dynamic.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+	return &kube{client: c, dynamic: d}, nil
 }

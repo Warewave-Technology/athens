@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ignored
+  annotations: {athens.warewave.io/enabled: "false"}
+spec:
+  selector: {matchLabels: {app: ignored}}
+  template:
+    metadata: {labels: {app: ignored}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: x, key: pw}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ignored}
+spec:
+  selector: {app: ignored}
+  ports: [{port: 5432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: also-ignored}
+spec:
+  selector: {matchLabels: {app: also-ignored}}
+  template:
+    metadata: {labels: {app: also-ignored}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: x, key: pw}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: also-ignored
+  annotations: {athens.warewave.io/enabled: "false"}
+spec:
+  selector: {app: also-ignored}
+  ports: [{port: 5432}]
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ignored-cluster
+  annotations: {athens.warewave.io/enabled: "false"}
+spec: {instances: 1}

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: lonely, uid: uid-lonely}
+spec:
+  selector: {matchLabels: {app: lonely}}
+  template:
+    metadata: {labels: {app: lonely}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: lonely-pw, key: password}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: wrong-port}
+spec:
+  selector: {app: lonely}
+  ports: [{port: 80, targetPort: 8080}]

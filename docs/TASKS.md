@@ -35,14 +35,14 @@ attempts (`//evil.com`, `https://evil`) fall back to `/`. Unit test coverage
 for auth ≥ 80%.
 
 ## M2 — Discovery
-- [ ] Types and Registry (DISCOVERY §1), change event channel
-- [ ] Namespaced informer factories; CRD presence check + late start (§2)
-- [ ] Sources: annotation, cnpg, zalando, generic (§4), service matching (§4.5), priority/dedup/opt-out (§3)
-- [ ] `internal/credentials.Resolve` (secret GET, literal env from informer cache, `_FILE` mapping)
-- [ ] All 13 fixtures + golden JSON (§6); golden must not contain secret values (test asserts)
-- [ ] `/readyz` waits for cache sync
-- [ ] Metrics: `discovery_targets`, `discovery_errors_total`
-- [ ] `GET /api/v1/admin/discovery`
+- [x] Types and Registry (DISCOVERY §1), change event channel
+- [x] Namespaced informer factories; CRD presence check + late start (§2)
+- [x] Sources: annotation, cnpg, zalando, generic (§4), service matching (§4.5), priority/dedup/opt-out (§3)
+- [x] `internal/credentials.Resolve` (secret GET, literal env from informer cache, `_FILE` mapping)
+- [x] All 13 fixtures (+ annotated-service) + golden JSON (§6); golden must not contain secret values (test asserts)
+- [x] `/readyz` waits for cache sync
+- [x] Metrics: `discovery_targets`, `discovery_errors_total`
+- [x] `GET /api/v1/admin/discovery`
 
 **Accept:** all fixtures produce expected targets; adding/removing an annotated
 sts in a live kind cluster updates the registry within 2s; RBAC with

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: solo, uid: uid-solo}
+spec:
+  serviceName: solo-hl
+  selector: {matchLabels: {app: solo}}
+  template:
+    metadata: {labels: {app: solo}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: solo-pw, key: pw}}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: solo-pw}
+stringData: {pw: solo-secret-pw}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: solo-hl}
+spec:
+  clusterIP: None
+  selector: {app: solo}
+  ports: [{port: 5432}]

@@ -1,0 +1,43 @@
+# External/manual endpoint described only by an annotated Service; it also
+# shadows the generic target behind the same Service (annotation wins).
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: analytics-creds
+    athens.warewave.io/user: analyst
+    athens.warewave.io/environment: development
+    athens.warewave.io/sslmode: verify-full
+    athens.warewave.io/ca-secret: analytics-ca
+spec:
+  selector: {app: analytics}
+  ports: [{name: postgresql, port: 5433, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: analytics, uid: uid-analytics}
+spec:
+  selector: {matchLabels: {app: analytics}}
+  template:
+    metadata: {labels: {app: analytics}}
+    spec:
+      containers:
+        - name: postgres
+          image: timescale/timescaledb-ha:pg16
+          env:
+            - {name: POSTGRES_PASSWORD, value: timescale-literal-pw}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broken
+  annotations: {athens.warewave.io/enabled: "true"}
+spec:
+  ports: [{port: 5432}]
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: analytics-creds}
+stringData: {password: analytics-secret-pw}

@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "id": "demo/my-release-postgresql",
+      "namespace": "demo",
+      "name": "my-release-postgresql",
+      "displayName": "my-release-postgresql",
+      "source": "generic",
+      "owner": {
+        "kind": "StatefulSet",
+        "name": "my-release-postgresql",
+        "uid": "uid-bitnami"
+      },
+      "service": "my-release-postgresql",
+      "host": "my-release-postgresql.demo.svc",
+      "port": 5432,
+      "defaultDB": "appdb",
+      "sslMode": "prefer",
+      "rw": {
+        "user": {
+          "literal": "app"
+        },
+        "password": {
+          "secret": {
+            "name": "my-release-postgresql",
+            "key": "password"
+          }
+        }
+      },
+      "labels": {
+        "app.kubernetes.io/component": "primary",
+        "app.kubernetes.io/instance": "my-release",
+        "app.kubernetes.io/name": "postgresql"
+      }
+    }
+  ],
+  "problems": null
+}
