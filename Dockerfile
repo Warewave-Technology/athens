@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1.7
 # Web and Go stages run on the build platform and cross-compile, so
 # multi-arch images build without emulation.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src/web
-RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# pnpm at the version pinned in packageManager; Node 25+ ships no corepack
+RUN npm install -g --no-fund --no-audit "$(node -p 'require("./package.json").packageManager')" && \
+    pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
