@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["image", "config", "secret", "persistence", "service", "networkPolicy"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "imagePullSecrets": {"type": "array"},
+    "config": {
+      "type": "object",
+      "required": ["server", "oidc", "discovery"],
+      "properties": {
+        "server": {
+          "type": "object",
+          "required": ["baseURL"],
+          "properties": {
+            "baseURL": {"type": "string", "pattern": "^https?://[^/]+/?$"},
+            "trustedProxies": {"type": "array", "items": {"type": "string"}},
+            "insecureDev": {"type": "boolean"},
+            "listen": {"not": {}},
+            "metricsListen": {"not": {}}
+          }
+        },
+        "oidc": {
+          "type": "object",
+          "required": ["issuer", "clientID"],
+          "properties": {
+            "issuer": {"type": "string"},
+            "clientID": {"type": "string", "minLength": 1},
+            "clientSecret": {"not": {}, "description": "use secret.* instead"}
+          }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {"sessionKey": {"not": {}, "description": "use secret.* instead"}}
+        },
+        "authz": {
+          "type": "object",
+          "properties": {
+            "readOnly": {"type": "boolean"},
+            "adminGroups": {"type": "array", "items": {"type": "string"}},
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["groups", "level"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "groups": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                  "namespaces": {"type": "array", "items": {"type": "string"}},
+                  "targets": {"type": "array", "items": {"type": "string"}},
+                  "databases": {"type": "array", "items": {"type": "string"}},
+                  "level": {"enum": ["read", "write"]}
+                }
+              }
+            }
+          }
+        },
+        "discovery": {
+          "type": "object",
+          "required": ["namespaces"],
+          "properties": {
+            "namespaces": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"}
+            }
+          }
+        },
+        "store": {"not": {}, "description": "managed by the chart (/data)"}
+      }
+    },
+    "secret": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {"type": "string"},
+        "clientSecret": {"type": "string"},
+        "sessionKey": {"type": "string"}
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "size": {"type": "string"},
+        "storageClass": {"type": "string"},
+        "existingClaim": {"type": "string"}
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "metricsPort": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
+    "ingress": {"type": "object"},
+    "serviceMonitor": {"type": "object"},
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "postgresPorts": {"type": "array", "items": {"type": "integer"}},
+        "extraEgress": {"type": "array"}
+      }
+    }
+  }
+}

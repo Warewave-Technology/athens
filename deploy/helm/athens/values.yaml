@@ -1,0 +1,82 @@
+image:
+  repository: ghcr.io/warewave-technology/athens
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# athens config.yaml (see config.example.yaml). Secrets do NOT go here:
+# oidc.clientSecret and auth.sessionKey come from the Secret below.
+config:
+  server:
+    baseURL: "https://athens.example.com"
+    trustedProxies: []
+  oidc:
+    issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
+    clientID: "<APP_CLIENT_ID>"
+    allowedGroups: []
+  authz:
+    readOnly: false
+    adminGroups: []
+    rules: []
+  discovery:
+    namespaces: []   # every namespace listed gets a Role + RoleBinding
+    cnpg:
+      enabled: true
+    zalando:
+      enabled: true
+  log:
+    level: info
+
+secret:
+  # Use an existing Secret with keys clientSecret and sessionKey.
+  existingSecret: ""
+  # Only used when existingSecret is empty (prefer existingSecret in production).
+  clientSecret: ""
+  sessionKey: ""     # 32+ random bytes, base64: openssl rand -base64 32
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9090
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: athens.example.com
+  tls: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+networkPolicy:
+  enabled: true
+  # Namespace labels allowed to reach port 8080 (ingress controller).
+  ingressNamespaceSelector:
+    kubernetes.io/metadata.name: ingress-nginx
+  # Namespace labels allowed to scrape port 9090.
+  metricsNamespaceSelector:
+    kubernetes.io/metadata.name: monitoring
+  # Postgres ports allowed towards the discovery namespaces.
+  postgresPorts: [5432]
+  # Extra egress rules (e.g. a custom Postgres port range).
+  extraEgress: []
+
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 512Mi}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+extraEnv: []

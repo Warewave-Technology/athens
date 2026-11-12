@@ -1,0 +1,77 @@
+# Operations
+
+## Architecture in one paragraph
+
+One pod (`replicas: 1`, `Recreate`) serves the SPA, `/api/v1`, `/auth/*` and
+health probes on `:8080` and Prometheus metrics on `:9090`. State lives in
+SQLite at `/data/athens.db` on a PVC: users, sessions, query history, saved
+queries, drafts, UI state and the audit log. Every audit record is also
+written to stdout as JSON (`"log":"audit"`), so the cluster log pipeline holds
+a second copy. Credentials for Postgres targets are read from Secrets when a
+connection pool is created and live only in memory.
+
+## Health and readiness
+
+| Endpoint | Meaning |
+|---|---|
+| `GET /healthz` | process is alive |
+| `GET /readyz` | store reachable, OIDC provider initialized, discovery caches synced (JSON body shows which check fails) |
+| `GET :9090/metrics` | Prometheus metrics, prefix `athens_` |
+
+Useful metrics: `athens_discovery_targets`, `athens_discovery_errors_total`,
+`athens_pool_conns`, `athens_queries_total{result}`,
+`athens_auth_logins_total{result}`, `athens_audit_write_errors_total` (must stay 0).
+
+## Backups
+
+The PVC holds user data (history, saved queries) and the audit log.
+
+```bash
+kubectl -n athens exec deploy/athens -- /athens --version   # confirm the pod
+```
+
+SQLite is in WAL mode; take a consistent copy with the volume snapshot
+mechanism of your storage class (`VolumeSnapshot`), or scale to zero first:
+
+```bash
+kubectl -n athens scale deploy/athens --replicas=0
+```
+
+then copy `/data/athens.db*` from the volume with a helper pod and scale back
+to 1. Losing the PVC loses history/saved queries but not the audit trail
+shipped through stdout.
+
+Audit records older than `audit.retentionDays` (default 90) are purged daily;
+sessions are purged every 10 minutes.
+
+## Upgrades
+
+`helm upgrade` replaces the pod (Recreate); expect a few seconds of downtime.
+Schema migrations of the SQLite store run automatically at start and are
+forward-only; back up the PVC before major upgrades. Sessions survive
+upgrades.
+
+## Rotating secrets
+
+| Secret | How |
+|---|---|
+| Entra client secret | create a new secret in the app registration, update `clientSecret` in the Kubernetes Secret, `kubectl rollout restart deploy/athens`, then delete the old Entra secret |
+| Session key | update `sessionKey` and restart. In-flight logins (10 min window) fail and must be restarted; existing sessions stay valid (only the login-state cookie is encrypted with the key) |
+| Postgres passwords | rotate in the database and the Secret. athens retries once with re-read credentials on an authentication failure, so the next request succeeds without a restart |
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Sign-in page "too many groups" | the token has a groups overage claim: set `groupMembershipClaims` to `ApplicationGroup` and assign groups to the enterprise app (README step 1.3/1.4) |
+| Sign-in "not authorized for this application" | `oidc.allowedGroups` is set and the user is in none of them |
+| Sign-in "tenant mismatch" | `oidc.issuer` tenant differs from the user's `tid` (guest accounts from other tenants are rejected) |
+| A user sees no targets | no `authz.rules` entry matches the user's group IDs; the token carries group **object IDs**, not names. Ask the user to sign out and in again after group changes (groups are snapshotted at login) |
+| A database is missing | Admin → Discovery lists every namespace with the reasons workloads were skipped (`no_service`, `credentials_unresolved`, ...) and per-target warnings |
+| Target shows `unreachable` | Admin → Pools shows the last connection error; check NetworkPolicy egress (`networkPolicy.postgresPorts`), the Secret keys, and `sslmode` |
+| `/readyz` stays 503 with `discovery:false` | the ServiceAccount lacks list/watch in a listed namespace (check the generated Role) or the API server is unreachable (NetworkPolicy egress to 443/6443) |
+| `audit_write_errors_total` increases | the PVC is full or read-only; audit records still reach stdout |
+| Queries fail with "statement timeout exceeded" | raise `limits.statementTimeout` (default 30s) |
+
+Logs are JSON on stdout. Credentials, cookies, tokens and SQL parameters are
+never logged; SQL text appears only in audit records (`audit.logSQL`).

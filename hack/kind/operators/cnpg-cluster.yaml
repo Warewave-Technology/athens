@@ -1,0 +1,12 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cnpg-db
+  namespace: athens-demo
+  annotations:
+    athens.warewave.io/environment: staging
+spec:
+  instances: 1
+  storage: {size: 1Gi}
+  bootstrap:
+    initdb: {database: app, owner: app}

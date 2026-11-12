@@ -1,0 +1,33 @@
+image:
+  repository: athens
+  tag: e2e
+  pullPolicy: Never
+config:
+  server:
+    baseURL: "http://athens.athens-system.svc:8080"
+    insecureDev: true
+  oidc:
+    issuer: "http://mockidp.athens-system.svc:8082/oidc"
+    clientID: athens-e2e
+    skipIssuerTenantCheck: true
+  authz:
+    adminGroups: ["e2e-admins"]
+    rules:
+      - {name: writers, groups: ["e2e-writers"], namespaces: ["athens-demo"], level: write}
+      - {name: readers, groups: ["e2e-readers"], namespaces: ["athens-demo"], level: read}
+  discovery:
+    namespaces: ["athens-demo"]
+  log:
+    level: debug
+secret:
+  clientSecret: athens-e2e-client-secret
+  sessionKey: "ZTJlLW9ubHktc2Vzc2lvbi1rZXktMzItYnl0ZXMtbG9uZyE="
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector: {kubernetes.io/metadata.name: athens-system}
+  metricsNamespaceSelector: {kubernetes.io/metadata.name: athens-system}
+  extraEgress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: athens-system}}
+          podSelector: {matchLabels: {app: mockidp}}
+      ports: [{port: 8082, protocol: TCP}]

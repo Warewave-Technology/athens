@@ -1,0 +1,14 @@
+athens is starting ({{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}).
+
+URL: {{ .Values.config.server.baseURL }}
+Register {{ .Values.config.server.baseURL }}/auth/callback as a Web redirect URI
+on the Entra app registration.
+
+Discovery namespaces (each got a Role + RoleBinding):
+{{- range .Values.config.discovery.namespaces }}
+  - {{ . }}
+{{- end }}
+
+Check status:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "athens.fullname" . }}

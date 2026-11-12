@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "athens.fullname" . }}
+  labels: {{- include "athens.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {{- include "athens.selectorLabels" . | nindent 4 }}
+  ports:
+    - {name: http, port: {{ .Values.service.port }}, targetPort: http}
+    - {name: metrics, port: {{ .Values.service.metricsPort }}, targetPort: metrics}

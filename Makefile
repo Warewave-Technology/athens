@@ -46,6 +46,8 @@ e2e:
 lint: web/node_modules
 	golangci-lint run ./...
 	cd web && pnpm lint && pnpm typecheck
+	helm lint deploy/helm/athens -f deploy/helm/athens/ci-values.yaml
+	helm template ci deploy/helm/athens -f deploy/helm/athens/ci-values.yaml | kubeconform -strict -summary -ignore-missing-schemas
 
 image:
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t $(IMAGE) .

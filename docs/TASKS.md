@@ -87,12 +87,12 @@ cancels within 1s via button; statement_timeout → 504; two statements → 400;
 `BEGIN` → 400; history shows last 500 only.
 
 ## M6 — Audit UI, metrics, Helm, hardening (MVP complete)
-- [ ] Admin pages: audit log (filters, paging), discovery status, pool status
-- [ ] All metrics from SPEC §11; ServiceMonitor template
-- [ ] Helm chart per SPEC §14 incl. per-namespace Roles, NetworkPolicy, PSS restricted compliant, values schema (`values.schema.json`)
-- [ ] `hack/kind`: script to create cluster, install CNPG + Zalando operators, bitnami chart, plain sts fixtures, mockoidc, athens chart; `make e2e` runs API-level e2e
-- [ ] Docs: `README.md` (install, Entra app registration steps incl. redirect URI, `groupMembershipClaims`, client secret, group assignment), `docs/OPERATIONS.md` (backup of PVC, upgrades, rotating secrets, troubleshooting)
-- [ ] Security review checklist: no secrets in logs (grep test on log output in e2e), headers present, CSRF on all mutations (route table test), authz on all target routes (route table test)
+- [x] Admin pages: audit log (filters, paging), discovery status, pool status
+- [x] All metrics from SPEC §11; ServiceMonitor template
+- [x] Helm chart per SPEC §14 incl. per-namespace Roles, NetworkPolicy, PSS restricted compliant, values schema (`values.schema.json`)
+- [x] `hack/kind`: script to create cluster, install CNPG + Zalando operators, bitnami chart, plain sts fixtures, mockoidc, athens chart; `make e2e` runs API-level e2e
+- [x] Docs: `README.md` (install, Entra app registration steps incl. redirect URI, `groupMembershipClaims`, client secret, group assignment), `docs/OPERATIONS.md` (backup of PVC, upgrades, rotating secrets, troubleshooting)
+- [x] Security review checklist: no secrets in logs (grep test on log output in e2e), headers present, CSRF on all mutations (route table test), authz on all target routes (route table test)
 
 **Accept:** `make e2e` green from scratch; `helm lint` + `kubeconform` pass;
 pod runs under PSS `restricted`; trivy no HIGH/CRITICAL.

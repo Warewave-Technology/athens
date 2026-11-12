@@ -1,0 +1,61 @@
+# Annotation source with a production environment and a read-only role.
+apiVersion: v1
+kind: Secret
+metadata: {name: legacy-crm-admin, namespace: athens-demo}
+stringData: {username: crm_admin, password: crm-admin-pw-e2e}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: legacy-crm-ro, namespace: athens-demo}
+stringData: {username: crm_ro, password: crm-ro-pw-e2e}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: legacy-crm-init, namespace: athens-demo}
+data:
+  10-ro.sql: |
+    CREATE ROLE crm_ro LOGIN PASSWORD 'crm-ro-pw-e2e';
+    GRANT pg_read_all_data TO crm_ro;
+    CREATE TABLE accounts (id serial PRIMARY KEY, name text NOT NULL);
+    INSERT INTO accounts(name) SELECT 'account ' || g FROM generate_series(1, 20) g;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy-crm
+  namespace: athens-demo
+  annotations:
+    athens.warewave.io/enabled: "true"
+    athens.warewave.io/secret: legacy-crm-admin
+    athens.warewave.io/readonly-secret: legacy-crm-ro
+    athens.warewave.io/database: crm
+    athens.warewave.io/display-name: Legacy CRM
+    athens.warewave.io/environment: production
+spec:
+  selector: {matchLabels: {app: legacy-crm}}
+  template:
+    metadata: {labels: {app: legacy-crm}}
+    spec:
+      volumes:
+        - name: init
+          configMap: {name: legacy-crm-init}
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: legacy-crm-admin, key: username}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: legacy-crm-admin, key: password}}
+            - {name: POSTGRES_DB, value: crm}
+          volumeMounts:
+            - {name: init, mountPath: /docker-entrypoint-initdb.d}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, crm_admin, -d, crm]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: legacy-crm, namespace: athens-demo}
+spec:
+  selector: {app: legacy-crm}
+  ports: [{port: 5432}]

@@ -21,7 +21,22 @@ RUN go build -ldflags "-s -w \
       -X github.com/Warewave-Technology/athens/internal/version.BuildDate=${DATE}" \
       -o /out/athens ./cmd/athens
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Test helpers, built only with --target mockidp / --target e2e.
+FROM go AS tools
+RUN go build -ldflags "-s -w" -o /out/mockidp ./hack/mockidp && \
+    go test -c -tags e2e -o /out/e2e ./test/e2e
+
+FROM gcr.io/distroless/static-debian12:nonroot AS mockidp
+COPY --from=tools /out/mockidp /mockidp
+USER 65532:65532
+ENTRYPOINT ["/mockidp"]
+
+FROM gcr.io/distroless/static-debian12:nonroot AS e2e
+COPY --from=tools /out/e2e /e2e
+USER 65532:65532
+ENTRYPOINT ["/e2e", "-test.v", "-test.timeout=15m"]
+
+FROM gcr.io/distroless/static-debian12:nonroot AS athens
 COPY --from=go /out/athens /athens
 USER 65532:65532
 EXPOSE 8080 9090
