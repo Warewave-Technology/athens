@@ -436,3 +436,17 @@ target re-provisioning against each other, the fallback-database path
 forcing a new password, RO errors and an RO health check changing the
 target status, a single global provisioning lock without timeouts, and a
 missing level failing open in pgconn.
+
+## ADR-029 New logo from the owner
+The owner replaced the brand icon with a raster logo in the Gruvbox palette
+(a shield around a database with a padlock and key, surrounded by
+connection lines and Kubernetes wheels). It supersedes the icon of ADR-019:
+- `docs/assets/brand/athens-icon-512.png` is the owner's file as delivered;
+  256 px and the UI icon (`web/public/athens-icon.png`, 128 px, also the
+  favicon and the only static file served without a session besides
+  `/assets/`) are resized from it.
+- The light/dark lockups and the social preview combine it with the
+  existing "Athens" wordmark paths in Gruvbox text colours and an aqua
+  swoosh (ADR-025); they are PNG, rendered from SVG with the icon embedded.
+- The old SVG icon, mark, mono marks and SVG lockups are removed. The
+  trademark note of ADR-019 still applies: the logo shows Kubernetes wheels.

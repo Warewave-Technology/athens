@@ -35,7 +35,7 @@ export function LoginPage() {
     <main className="login">
       <section className="login-card" aria-labelledby="login-title">
         <div className="login-brand">
-          <img className="brand-mark login-mark" src="/favicon.svg" alt="" />
+          <img className="brand-mark login-mark" src="/athens-icon.png" alt="" />
           <span>Athens</span>
         </div>
         <h1 id="login-title">Sign in</h1>

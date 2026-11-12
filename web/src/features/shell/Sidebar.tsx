@@ -7,7 +7,7 @@ import { ConnectionCard } from "./ConnectionCard";
 export function Brand() {
   return (
     <a className="brand" href="/">
-      <img className="brand-mark" src="/favicon.svg" alt="" />
+      <img className="brand-mark" src="/athens-icon.png" alt="" />
       Athens
     </a>
   );

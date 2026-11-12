@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/athens-logo-dark.svg">
-    <img src="docs/assets/brand/athens-logo-light.svg" alt="Athens" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/athens-logo-dark.png">
+    <img src="docs/assets/brand/athens-logo-light.png" alt="Athens" width="360">
   </picture>
 </p>
 

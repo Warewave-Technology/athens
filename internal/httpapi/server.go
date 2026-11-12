@@ -94,7 +94,7 @@ func (s *Server) build() http.Handler {
 	root.Handle("/", route("GET /{spa...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Static assets are public; navigations need a session so the app
 		// shell never renders for anonymous users.
-		if strings.HasPrefix(r.URL.Path, "/assets/") || r.URL.Path == "/favicon.svg" {
+		if strings.HasPrefix(r.URL.Path, "/assets/") || r.URL.Path == "/athens-icon.png" {
 			spa.ServeHTTP(w, r)
 			return
 		}
