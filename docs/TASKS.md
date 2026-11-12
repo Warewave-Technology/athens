@@ -98,10 +98,10 @@ cancels within 1s via button; statement_timeout → 504; two statements → 400;
 pod runs under PSS `restricted`; trivy no HIGH/CRITICAL.
 
 ## M7 — Grid editing
-- [ ] Insert / update (optimistic) / delete (single + bulk ≤100) per SPEC §8 & API.md
-- [ ] Production targets: grid writes require confirm dialog
-- [ ] Audit `row_insert/update/delete` with pk + changed columns
-- [ ] Frontend: inline edit, dirty tracking, save/discard, side panel edit/insert with per-type input hints (json textarea, boolean toggle, NULL toggle, default toggle), conflict UX (reload row)
+- [x] Insert / update (optimistic) / delete (single + bulk ≤100) per SPEC §8 & API.md
+- [x] Production targets: grid writes require confirm dialog
+- [x] Audit `row_insert/update/delete` with pk + changed columns
+- [x] Frontend: inline edit, dirty tracking, save/discard, side panel edit/insert with per-type input hints (json textarea, boolean toggle, NULL toggle, default toggle), conflict UX (reload row)
 
 **Accept:** concurrent edit in psql between load and save → 409 and UI
 offers reload; PK-less table not editable with reason shown; read user gets

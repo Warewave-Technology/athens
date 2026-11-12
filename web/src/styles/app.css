@@ -743,3 +743,46 @@ table.simple td.mono {
   word-break: break-all;
   margin: 0;
 }
+
+.grid-cell.dirty {
+  background: var(--dirty);
+  box-shadow: inset 2px 0 0 var(--yellow);
+}
+
+.grid-row.marked {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+}
+
+.grid-row.conflict {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.cell-input {
+  width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 0;
+}
+
+.field-input textarea,
+.field-input input,
+.field-input select {
+  width: 100%;
+}
+
+.field-toggles {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.dirty-field {
+  background: var(--dirty);
+}
+
+.error-banner button {
+  color: var(--fg);
+  margin-left: 8px;
+}

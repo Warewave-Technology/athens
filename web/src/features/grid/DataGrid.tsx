@@ -25,6 +25,8 @@ export interface DataGridProps {
   cellClassName?: (row: number, col: number) => string;
   onCellDoubleClick?: (row: number, col: number) => void;
   rowClassName?: (row: number) => string;
+  /** Row number clicks (multi-select with modifier keys). Default: select row. */
+  onRowNumberClick?: (row: number, e: React.MouseEvent) => void;
 }
 
 const ROW_H = 24;
@@ -197,7 +199,13 @@ export function DataGrid(p: DataGridProps) {
               }
               style={{ top: ROW_H + vr.start, height: ROW_H, width: totalW }}
             >
-              <div className="grid-rownum" onClick={() => p.onSelectRow?.(r)} title="Open row">
+              <div
+                className="grid-rownum"
+                onClick={(e) =>
+                  p.onRowNumberClick ? p.onRowNumberClick(r, e) : p.onSelectRow?.(r)
+                }
+                title="Open row (⌘/Ctrl-click to select)"
+              >
                 {r + 1}
               </div>
               {vcols.map((vc) => {

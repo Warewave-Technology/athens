@@ -26,3 +26,19 @@ SELECT count(*) FROM "shop"."orders" WHERE "status" = $1
 SELECT "select" FROM "my ""schema"""."Table; DROP TABLE x" WHERE "a" = $1 AND "b" = $2
 -- params: "1"::23, "x"::25
 
+-- insert
+INSERT INTO "shop"."orders" ("amount", "status", "we""ird col") VALUES ($1, $2, $3) RETURNING "id", "status", "amount", "we""ird col"
+-- params: NULL::1700, "new"::90001, "x'); DROP TABLE t; --"::25
+
+-- insert defaults
+INSERT INTO "shop"."orders" DEFAULT VALUES RETURNING "id", "status", "amount", "we""ird col"
+-- params: 
+
+-- update optimistic
+UPDATE "my ""schema"""."Table; DROP TABLE x" SET "select" = $1 WHERE "a" = $2 AND "b" = $3 AND "select"::text IS NOT DISTINCT FROM $4 RETURNING "a", "b", "select"
+-- params: "new"::25, "1"::23, "k"::25, NULL::25
+
+-- delete
+DELETE FROM "shop"."orders" WHERE "id" = $1
+-- params: "42"::20
+

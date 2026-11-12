@@ -55,6 +55,14 @@ func TestGolden(t *testing.T) {
 		}},
 		{"count", func() (*Statement, error) { return Count(orders, []Filter{{"status", "eq", "paid"}}) }},
 		{"cell", func() (*Statement, error) { return Cell(weird, "select", map[string]*string{"a": s("1"), "b": s("x")}) }},
+		{"insert", func() (*Statement, error) {
+			return Insert(orders, map[string]*string{"status": s("new"), "amount": nil, `we"ird col`: s("x'); DROP TABLE t; --")})
+		}},
+		{"insert defaults", func() (*Statement, error) { return Insert(orders, nil) }},
+		{"update optimistic", func() (*Statement, error) {
+			return Update(weird, map[string]*string{"a": s("1"), "b": s("k")}, map[string]*string{"select": s("new")}, map[string]*string{"select": nil})
+		}},
+		{"delete", func() (*Statement, error) { return Delete(orders, map[string]*string{"id": s("42")}) }},
 	}
 	var out strings.Builder
 	for _, tc := range cases {
@@ -64,6 +72,10 @@ func TestGolden(t *testing.T) {
 		}
 		params := make([]string, len(st.Params))
 		for i, p := range st.Params {
+			if p == nil {
+				params[i] = fmt.Sprintf("NULL::%d", st.OIDs[i])
+				continue
+			}
 			params[i] = fmt.Sprintf("%q::%d", *p, st.OIDs[i])
 		}
 		fmt.Fprintf(&out, "-- %s\n%s\n-- params: %s\n\n", tc.name, st.SQL, strings.Join(params, ", "))
@@ -105,6 +117,18 @@ func TestRejected(t *testing.T) {
 		if !errors.As(err, &ie) {
 			t.Errorf("%s: want InvalidError, got %v", tc.name, err)
 		}
+	}
+	if _, err := Update(orders, map[string]*string{"id": s("1")}, map[string]*string{"status": s("x")}, nil); err == nil {
+		t.Error("update without original accepted")
+	}
+	if _, err := Update(orders, map[string]*string{"id": s("1")}, map[string]*string{"nope": s("x")}, map[string]*string{"nope": nil}); err == nil {
+		t.Error("update of unknown column accepted")
+	}
+	if _, err := Insert(orders, map[string]*string{"x; drop": s("1")}); err == nil {
+		t.Error("insert of unknown column accepted")
+	}
+	if _, err := Delete(Table{Schema: "a", Name: "b", Columns: orders.Columns}, map[string]*string{"id": s("1")}); err == nil {
+		t.Error("delete without pk accepted")
 	}
 	if _, err := Cell(orders, "status", map[string]*string{"nope": s("1")}); err == nil {
 		t.Error("cell with wrong pk accepted")
