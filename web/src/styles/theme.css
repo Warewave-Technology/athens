@@ -188,3 +188,13 @@ button:focus-visible {
   place-items: center;
   height: 100%;
 }
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.15);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(1.15);
+}

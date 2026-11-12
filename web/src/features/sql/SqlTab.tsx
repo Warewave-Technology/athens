@@ -69,15 +69,21 @@ export function SqlTab({ targetId, db }: { targetId: string; db: string }) {
   const target = useTargets().data?.find((t) => t.id === targetId);
   const draftURL = "/drafts/" + tpath(targetId).replace("/targets/", "") + "/" + enc(db);
 
-  // restore the draft once
+  // restore the draft once; the restored text counts as already saved so the
+  // autosave never overwrites the draft with the empty initial state
+  const lastSaved = useRef<string | null>(null);
   useEffect(() => {
     api<{ sql: string }>(draftURL)
-      .then((d) => setInitial(d.sql))
-      .catch(() => setInitial(""));
+      .then((d) => d.sql)
+      .catch(() => "")
+      .then((sql) => {
+        lastSaved.current = sql;
+        setText(sql);
+        setInitial(sql);
+      });
   }, [draftURL]);
 
   // autosave (debounced 1s)
-  const lastSaved = useRef<string | null>(null);
   useEffect(() => {
     if (initial === null || text === lastSaved.current) return;
     const t = setTimeout(() => {
