@@ -2,7 +2,7 @@
 
 .app {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: var(--side-w, 264px) minmax(0, 1fr);
   height: 100%;
 }
 
@@ -28,6 +28,7 @@ kbd {
 /* ---------- sidebar ---------- */
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -499,9 +500,28 @@ kbd {
 }
 
 .tab-body {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   background: var(--surface);
+}
+
+.tab-body > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tab-pane.inactive {
+  visibility: hidden;
+}
+
+.tab-menu {
+  position: fixed;
+  z-index: 200;
+  margin: 0;
+  min-width: 200px;
 }
 
 /* empty state */
@@ -1162,6 +1182,26 @@ table.simple td.wrap {
 .cm-lintRange-error {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
   text-decoration: underline wavy var(--danger);
+}
+
+.side-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.side-resizer:hover,
+.col-resizing .side-resizer {
+  background: var(--accent);
+}
+
+.col-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .hresizer {

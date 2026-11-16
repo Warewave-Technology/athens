@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Columns3, KeyRound, Plus, Rows3, SquareTerminal, Table2, X } from "lucide-react";
 import { useMe, useRelations, useTargets } from "../../api/hooks";
 import { Icon } from "../../components/Icon";
@@ -117,11 +117,71 @@ function EmptyMain() {
   );
 }
 
+/** Right-click menu of a tab. */
+function TabMenu(p: { x: number; y: number; tabId: string; onClose: () => void }) {
+  const { tabs, closeTabs } = useWorkspace();
+  const ref = useRef<HTMLDivElement>(null);
+  const { onClose } = p;
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    window.addEventListener("blur", onClose);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("blur", onClose);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+  const i = tabs.findIndex((t) => t.id === p.tabId);
+  const ids = (f: (t: Tab, j: number) => boolean) => tabs.filter(f).map((t) => t.id);
+  const items = [
+    { label: "Close", ids: [p.tabId] },
+    { label: "Close others", ids: ids((t) => t.id !== p.tabId) },
+    { label: "Close tabs to the right", ids: ids((_, j) => j > i) },
+    { label: "Close all", ids: ids(() => true) },
+  ];
+  return (
+    <div
+      ref={ref}
+      className="popover tab-menu"
+      role="menu"
+      style={{ left: Math.min(p.x, window.innerWidth - 220), top: p.y }}
+    >
+      {items.map((it) => (
+        <button
+          key={it.label}
+          role="menuitem"
+          className="pop-item"
+          disabled={it.ids.length === 0}
+          onClick={() => {
+            closeTabs(it.ids);
+            onClose();
+          }}
+        >
+          <span className="pop-label">{it.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Workspace() {
   const { tabs, activeTab, activate, closeTab, openSql, clearSeed, targetId, db } = useWorkspace();
   const active = tabs.find((t) => t.id === activeTab);
   useRememberLastTable();
   const strip = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; tabId: string } | null>(null);
+  // Tabs stay mounted once opened, so switching keeps their results, edits
+  // and running queries; a tab is mounted the first time it is shown.
+  const [mounted, setMounted] = useState<string[]>([]);
+  if (activeTab && !mounted.includes(activeTab)) setMounted([...mounted, activeTab]);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   return (
     <section className="main">
@@ -133,7 +193,12 @@ export function Workspace() {
             aria-selected={t.id === activeTab}
             className={"tab" + (t.id === activeTab ? " active" : "")}
             onClick={() => activate(t.id)}
+            onMouseDown={(e) => e.button === 1 && e.preventDefault()}
             onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, tabId: t.id });
+            }}
             title={
               (t.kind === "table" ? t.schema + "." + t.name : t.title) +
               " — " +
@@ -167,17 +232,30 @@ export function Workspace() {
       </div>
       <div className="tab-body">
         {!active && <EmptyMain />}
-        {active?.kind === "table" && <TableTab key={active.id} tab={active} />}
-        {active?.kind === "sql" && (
-          <SqlTab
-            key={active.id}
-            targetId={active.targetId}
-            db={active.db}
-            seed={active.seed}
-            onSeedUsed={() => clearSeed(active.id)}
-          />
-        )}
+        {tabs
+          .filter((t) => mounted.includes(t.id))
+          .map((t) => (
+            // inactive panes keep their size (grids stay measured) but are
+            // invisible and inert
+            <div
+              key={t.id}
+              className={"tab-pane" + (t.id === activeTab ? "" : " inactive")}
+              inert={t.id !== activeTab}
+            >
+              {t.kind === "table" ? (
+                <TableTab tab={t} />
+              ) : (
+                <SqlTab
+                  targetId={t.targetId}
+                  db={t.db}
+                  seed={t.seed}
+                  onSeedUsed={() => clearSeed(t.id)}
+                />
+              )}
+            </div>
+          ))}
       </div>
+      {menu && <TabMenu {...menu} onClose={closeMenu} />}
     </section>
   );
 }

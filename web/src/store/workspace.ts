@@ -37,6 +37,7 @@ interface Workspace extends Persisted {
   openSql: (seed?: string) => void;
   clearSeed: (id: string) => void;
   closeTab: (id: string) => void;
+  closeTabs: (ids: string[]) => void;
   activate: (id: string) => void;
   setSub: (id: string, sub: "data" | "structure") => void;
   setSidebarWidth: (w: number) => void;
@@ -47,7 +48,7 @@ const initial: Persisted = {
   db: null,
   tabs: [],
   activeTab: null,
-  sidebarWidth: 280,
+  sidebarWidth: 264,
 };
 
 function persist(key: string | null, s: Persisted) {
@@ -111,12 +112,19 @@ export const useWorkspace = create<Workspace>((set, get) => {
           t.id === id && t.kind === "sql" ? { ...t, seed: undefined } : t,
         ),
       }),
-    closeTab: (id) => {
+    closeTab: (id) => get().closeTabs([id]),
+    // A closed active tab hands over to the next open tab on its right, else
+    // on its left.
+    closeTabs: (ids) => {
       const { tabs, activeTab } = get();
-      const i = tabs.findIndex((t) => t.id === id);
-      const next = tabs.filter((t) => t.id !== id);
-      const active =
-        activeTab === id ? (next[Math.min(i, next.length - 1)]?.id ?? null) : activeTab;
+      const drop = new Set(ids);
+      const next = tabs.filter((t) => !drop.has(t.id));
+      let active = activeTab;
+      if (active && drop.has(active)) {
+        const i = tabs.findIndex((t) => t.id === active);
+        const open = (t: Tab) => !drop.has(t.id);
+        active = tabs.slice(i).find(open)?.id ?? tabs.slice(0, i).reverse().find(open)?.id ?? null;
+      }
       const focus = next.find((t) => t.id === active);
       update({
         tabs: next,
@@ -133,6 +141,6 @@ export const useWorkspace = create<Workspace>((set, get) => {
       update({
         tabs: get().tabs.map((t) => (t.id === id && t.kind === "table" ? { ...t, sub } : t)),
       }),
-    setSidebarWidth: (w) => update({ sidebarWidth: Math.max(180, Math.min(640, w)) }),
+    setSidebarWidth: (w) => update({ sidebarWidth: Math.round(Math.max(200, Math.min(640, w))) }),
   };
 });

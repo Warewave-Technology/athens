@@ -37,7 +37,7 @@ const kindIcon: Record<RelKind, LucideIcon> = {
 const groupOrder = ["Tables", "Views", "Materialized views", "Foreign tables", "Sequences"];
 
 type Row =
-  | { type: "schema"; key: string; schema: string; count: number }
+  | { type: "schema"; key: string; schema: string; tables: number; count: number }
   | { type: "group"; key: string; label: string; count: number }
   | { type: "rel"; key: string; rel: Relation; depth: number };
 
@@ -76,7 +76,8 @@ export function SchemaTree() {
     const multiSchema = bySchema.size > 1 || q;
     for (const [schema, list] of bySchema) {
       const sk = "s:" + schema;
-      out.push({ type: "schema", key: sk, schema, count: list.length });
+      const tables = list.filter((r) => kindLabel[r.kind] === "Tables").length;
+      out.push({ type: "schema", key: sk, schema, tables, count: list.length });
       if (collapsed.has(sk) && !q) continue;
       const groups = new Map<string, Relation[]>();
       for (const r of list)
@@ -162,6 +163,12 @@ export function SchemaTree() {
                 <Icon as={shut ? ChevronRight : ChevronDown} size={13} />
                 <Icon as={Folder} size={14} />
                 <span className="tree-label">{row.schema}</span>
+                <span
+                  className="tree-count"
+                  title={`${row.tables} ${row.tables === 1 ? "table" : "tables"}, ${row.count} relations in all`}
+                >
+                  {row.tables}
+                </span>
               </div>
             );
           }

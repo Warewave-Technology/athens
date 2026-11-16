@@ -13,6 +13,7 @@ export function App() {
   const [theme, setTheme] = useTheme();
   const load = useWorkspace((s) => s.load);
   const loadedFor = useWorkspace((s) => s.storageKey);
+  const sidebarWidth = useWorkspace((s) => s.sidebarWidth);
   const isAdminPage = window.location.pathname.startsWith("/admin");
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" style={{ "--side-w": sidebarWidth + "px" } as React.CSSProperties}>
       <Sidebar me={me.data} theme={theme} setTheme={setTheme} />
       {loadedFor && <Workspace />}
     </div>
