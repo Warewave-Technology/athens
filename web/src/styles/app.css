@@ -1276,6 +1276,14 @@ table.simple td.wrap {
   color: var(--text-3);
 }
 
+.drawer-meta button.run-saved {
+  color: var(--accent-text);
+}
+
+.drawer-meta button.run-saved:hover {
+  background: var(--accent-soft);
+}
+
 /* ---------- dialogs ---------- */
 
 .modal-backdrop {

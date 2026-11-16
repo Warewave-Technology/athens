@@ -1,4 +1,4 @@
-import { Trash2, X } from "lucide-react";
+import { Play, Trash2, X } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -100,6 +100,7 @@ export function FavoritesDrawer(p: {
   targetId: string;
   db: string;
   onPick: (sql: string) => void;
+  onRun: (sql: string) => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -148,6 +149,17 @@ export function FavoritesDrawer(p: {
                 </span>
               )}
               <span className="spacer" />
+              <button
+                className="ghost run-saved"
+                aria-label={`Run "${s.name}"`}
+                title="Load into the editor and run"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  p.onRun(s.sql);
+                }}
+              >
+                <Icon as={Play} size={13} />
+              </button>
               <button
                 className="ghost"
                 aria-label="Delete"

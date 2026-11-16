@@ -352,6 +352,11 @@ export function SqlTab({
           targetId={targetId}
           db={db}
           onPick={setEditorText}
+          onRun={(sql) => {
+            if (running) return;
+            setEditorText(sql);
+            void execute(sql);
+          }}
           onClose={() => setDrawer(null)}
         />
       )}
