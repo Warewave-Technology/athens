@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { basicSetup } from "codemirror";
+import { closeCompletion } from "@codemirror/autocomplete";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { PostgreSQL, sql, type SQLNamespace } from "@codemirror/lang-sql";
@@ -80,7 +81,10 @@ export function SqlEditor(p: SqlEditorProps) {
           lang.current.of(sql({ dialect: PostgreSQL, upperCaseKeywords: false })),
           Prec.highest(
             keymap.of([
-              { key: "Mod-Enter", run: (v) => (cb.current.onRun(runnableText(v)), true) },
+              {
+                key: "Mod-Enter",
+                run: (v) => (closeCompletion(v), cb.current.onRun(runnableText(v)), true),
+              },
               { key: "Escape", run: () => (cb.current.onCancel(), false) },
             ]),
           ),
