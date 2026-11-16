@@ -171,6 +171,7 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 		Target: in.Target, Database: in.Database, Level: in.Level, Email: in.User.Email, Reset: true,
 		ReadOnly: readOnlyProbe, Notices: &out.Notices,
 	}, func(ctx context.Context, tx pgx.Tx) error {
+		s.Registry.Attach(id, in.Target.ID, in.Database, cls.Statement, tx.Conn().PgConn().PID())
 		// Rows changed by this statement, including writable CTEs, EXPLAIN
 		// ANALYZE, cascades and triggers: the difference of the backend's
 		// pending table counters around it (they may still hold earlier

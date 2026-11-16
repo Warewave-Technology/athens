@@ -59,7 +59,11 @@ from the menu under your name at the bottom of the sidebar.
   Partitions appear under their parent table.
 - **Tabs:** every table and every SQL editor opens in a tab. Tabs remember
   their server and database, so you can keep tabs on different databases open
-  side by side.
+  side by side. A tab keeps its results, unsaved edits and running query
+  while you look at another one. Right-click a tab to close it, the others,
+  the ones to its right or all; a middle click closes it too.
+- **Sidebar width:** drag the sidebar's right edge; double-click it to reset.
+  The number next to a schema is its table count.
 - **Data / Structure / SQL:** the three views of a table.
 
 ## Finding a table
@@ -164,6 +168,11 @@ editor is bound to the server and database of its tab.
   select rows to delete. The results bar names the table. Joins, `GROUP BY`,
   `DISTINCT`, `UNION`, CTEs, views and computed columns stay read-only; the
   bar then shows **Read only**.
+- **Running** (write access): the queries running on this database now,
+  refreshed every 2 seconds, with how long each has run and what it waits
+  on. Your own athens queries can be stopped there. The text of other
+  applications' queries is visible only if the database login may see it
+  (`pg_read_all_stats`); statements that mention a password are hidden.
 - **History:** every query you run, with its result, newest first. Click
   one to load it into the editor.
 - **Saved:** keep queries by name with **Save current**; they are yours only.

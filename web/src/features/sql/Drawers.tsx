@@ -1,7 +1,9 @@
-import { Play, Trash2, X } from "lucide-react";
+import { Copy, Play, Square, Trash2, X } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { dbPath } from "../../api/hooks";
+import { copyText } from "../grid/gridUtil";
 
 interface HistoryItem {
   id: number;
@@ -175,6 +177,106 @@ export function FavoritesDrawer(p: {
           </li>
         ))}
         {q.data?.length === 0 && <li className="muted">Nothing saved yet.</li>}
+      </ul>
+    </aside>
+  );
+}
+
+interface Activity {
+  pid: number;
+  user: string;
+  application: string;
+  client: string | null;
+  state: string;
+  wait: string | null;
+  queryStart: string | null;
+  xactStart: string | null;
+  query: string;
+  /** set on your own editor queries: they can be cancelled */
+  queryId?: string;
+}
+
+function since(from: string | null, now: string) {
+  if (!from) return "";
+  const s = Math.max(0, Math.floor((Date.parse(now) - Date.parse(from)) / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${s % 60} s`;
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}
+
+const stateLabel: Record<string, string> = {
+  active: "Running",
+  "idle in transaction": "Idle in transaction",
+  "idle in transaction (aborted)": "Idle in aborted transaction",
+  fastpath: "Running",
+};
+
+/** Queries running on the database now (pg_stat_activity), refreshed every 2 s. */
+export function RunningDrawer(p: { targetId: string; db: string; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["activity", p.targetId, p.db],
+    queryFn: () => api<{ now: string; items: Activity[] }>(dbPath(p.targetId, p.db) + "/activity"),
+    refetchInterval: 2000,
+  });
+  const cancel = useMutation({
+    mutationFn: (id: string) => api(`/queries/${id}/cancel`, { method: "POST" }),
+    onSettled: () => q.refetch(),
+  });
+  return (
+    <aside className="drawer">
+      <div className="drawer-head">
+        <b>Running queries</b>
+        {q.data && <span className="muted">{q.data.items.length}</span>}
+        <span className="spacer" />
+        <button className="ghost" onClick={p.onClose} aria-label="Close">
+          <Icon as={X} size={15} />
+        </button>
+      </div>
+      {q.isPending && <div className="pad muted">Loading…</div>}
+      {q.isError && <div className="pad error-text">{q.error.message}</div>}
+      <ul className="drawer-list">
+        {q.data?.items.map((a) => (
+          <li key={a.pid} className="activity">
+            <div className="drawer-meta">
+              <span className={"state-chip" + (a.state === "active" ? " active" : " waiting")}>
+                {stateLabel[a.state] ?? (a.state || "Unknown")}
+              </span>
+              <span className="muted">for {since(a.queryStart, q.data.now)}</span>
+              <span className="spacer" />
+              <button
+                className="ghost"
+                aria-label="Copy the statement"
+                title="Copy the statement"
+                onClick={() => copyText(a.query)}
+              >
+                <Icon as={Copy} size={13} />
+              </button>
+              {a.queryId && (
+                <button
+                  className="ghost cancel-run"
+                  aria-label="Cancel this query"
+                  title="Cancel this query"
+                  disabled={cancel.isPending}
+                  onClick={() => cancel.mutate(a.queryId!)}
+                >
+                  <Icon as={Square} size={12} />
+                </button>
+              )}
+            </div>
+            <pre className="mono">{a.query}</pre>
+            <div className="activity-meta muted">
+              {a.queryId ? "Your query" : a.application || a.user}
+              {a.wait && ` · waiting on ${a.wait}`}
+              {a.xactStart &&
+                a.queryStart &&
+                Date.parse(a.queryStart) - Date.parse(a.xactStart) >= 1000 &&
+                ` · transaction open for ${since(a.xactStart, q.data.now)}`}
+            </div>
+          </li>
+        ))}
+        {q.data?.items.length === 0 && (
+          <li className="muted activity">Nothing is running right now.</li>
+        )}
       </ul>
     </aside>
   );

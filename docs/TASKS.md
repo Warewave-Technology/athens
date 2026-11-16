@@ -110,6 +110,8 @@ offers reload; PK-less table not editable with reason shown; read user gets
 ## M8 — Extras (after MVP feedback)
 - [x] Feedback: visible editor cursor in both themes, run button on saved
   queries, editable single-table query results (ADR-030)
+- [x] Feedback: tabs keep their state, tab context menu, schema table
+  count, resizable sidebar, running queries panel (ADR-031)
 - [ ] Entra Workload Identity (client assertion, no client secret) for AKS
 - [ ] Read-only credential preference + fallback warnings surfaced in UI
 - [ ] Optional Postgres store backend (enables replicas > 1)

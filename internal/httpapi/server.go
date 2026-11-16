@@ -138,6 +138,7 @@ func (s *Server) routes() {
 	s.handle("DELETE "+db+"/relations/{schema}/{rel}/rows", s.deleteRows)
 	s.handle("GET "+db+"/completion", s.completion)
 	s.handle("POST "+db+"/query", s.executeQuery)
+	s.handle("GET "+db+"/activity", s.activity)
 	s.handle("POST /queries/{id}/cancel", s.cancelQuery)
 	s.handle("GET /history", s.listHistory)
 	s.handle("DELETE /history/{id}", s.deleteHistory)

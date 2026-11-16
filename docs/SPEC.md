@@ -319,7 +319,8 @@ Events: `login`, `login_denied`, `logout`, `query_execute`, `query_cancel`,
 `row_insert`, `row_update`, `row_delete`, `access_denied`, `confirm_required`;
 reads when `audit.logReads=true` (default): `rows_read` (each grid page; sort,
 filter columns and operators, values only with `audit.logValues`),
-`cell_read` (column + pk), `structure_view`; the user's stored items:
+`cell_read` (column + pk), `structure_view`, `activity_view` (running
+queries, one per user and database per 5 min); the user's stored items:
 `saved_query_create|update|delete`, `history_delete`; admin: `admin_view`
 (throttled to one per user, page and filter set per 5 min, the pages poll),
 `audit_export`. Drafts and UI state are autosaved and not audited (ADR-021).

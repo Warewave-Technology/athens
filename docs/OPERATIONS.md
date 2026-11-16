@@ -54,7 +54,8 @@ the record of truth and ship it to append-only storage.
 
 Events: `login`, `login_denied`, `logout`, `query_execute`, `query_cancel`,
 `row_insert`, `row_update`, `row_delete`, `access_denied`, `confirm_required`,
-`rows_read`, `cell_read`, `structure_view` (reads, `audit.logReads`),
+`rows_read`, `cell_read`, `structure_view`, `activity_view` (reads,
+`audit.logReads`),
 `saved_query_create|update|delete`, `history_delete`, `admin_view`,
 `audit_export`. Drafts and UI state are autosaved on every edit and are not
 audited.

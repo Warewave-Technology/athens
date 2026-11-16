@@ -469,3 +469,28 @@ rows one to one, so an edit cannot reach a different row than the one shown:
   are those of the grid (M7). The UI shares one implementation for both.
 Computed columns of an edited row keep their old value until the query runs
 again.
+
+## ADR-031 Running queries panel
+Users asked for a view of what runs on a database, like the ClickHouse
+console. The owner chose database activity over a list of one's own athens
+queries:
+- `GET .../activity` lists the non-idle client sessions of the database from
+  `pg_stat_activity` (at most 200, text capped at 8192 characters), through
+  the target's RW login in a READ ONLY transaction. Writers only: read users
+  connect with the read-only login and get 403.
+- Other sessions' text is what the login may see (`pg_read_all_stats` shows
+  all; otherwise PostgreSQL returns `<insufficient privilege>`). A statement
+  that mentions `password` is replaced by a placeholder.
+- athens editor reads run through a cursor, so the server shows only the
+  FETCH; the query registry records each editor query's server process and
+  statement, and the panel shows that statement instead.
+- Only the caller's own editor queries carry their query id and can be
+  cancelled (the existing cancel endpoint). athens never cancels or
+  terminates other sessions (no `pg_cancel_backend`).
+- Views are audited as `activity_view`, at most one per user, target and
+  database every 5 minutes (the panel polls every 2 s), when
+  `audit.logReads` is on.
+
+Opened tabs now stay mounted (hidden, inert) so a tab keeps its results,
+edits and running query when another tab is shown; a tab is mounted the
+first time it is shown, not when the workspace is restored.

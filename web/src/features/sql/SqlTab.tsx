@@ -12,7 +12,7 @@ import { useColumnRules, useRowWrites } from "../grid/useRowWrites";
 import { relPath } from "../table/tableUtil";
 import { ConfirmDialog, type ConfirmDetails } from "./ConfirmDialog";
 import { downloadCSV } from "./csv";
-import { FavoritesDrawer, HistoryDrawer } from "./Drawers";
+import { FavoritesDrawer, HistoryDrawer, RunningDrawer } from "./Drawers";
 import { SqlEditor } from "./SqlEditor";
 import { markError, runnableText } from "./editorUtil";
 import type { EditorView } from "@codemirror/view";
@@ -84,7 +84,7 @@ export function SqlTab({
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [pane, setPane] = useState<"results" | "messages">("results");
   const [confirm, setConfirm] = useState<{ details: ConfirmDetails; sql: string } | null>(null);
-  const [drawer, setDrawer] = useState<"history" | "saved" | null>(null);
+  const [drawer, setDrawer] = useState<"history" | "saved" | "running" | null>(null);
   const [limit, setLimit] = useState(1000);
   const [editorH, setEditorH] = useState(220);
   const qc = useQueryClient();
@@ -303,6 +303,15 @@ export function SqlTab({
             </span>
           )}
           <span className="spacer" />
+          {target?.level === "write" && (
+            <button
+              className={drawer === "running" ? "active" : ""}
+              onClick={() => setDrawer(drawer === "running" ? null : "running")}
+              title="Queries running on this database now"
+            >
+              Running
+            </button>
+          )}
           <button
             className={drawer === "history" ? "active" : ""}
             onClick={() => setDrawer(drawer === "history" ? null : "history")}
@@ -445,6 +454,9 @@ export function SqlTab({
           onPick={setEditorText}
           onClose={() => setDrawer(null)}
         />
+      )}
+      {drawer === "running" && (
+        <RunningDrawer targetId={targetId} db={db} onClose={() => setDrawer(null)} />
       )}
       {drawer === "saved" && (
         <FavoritesDrawer

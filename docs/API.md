@@ -125,6 +125,17 @@ server uses it as `queryId` if valid and unique for the user.
 
 `POST /queries/{queryId}/cancel` → 204
 
+`GET /targets/{tid}/db/{db}/activity` (write access; 403 otherwise) → running
+queries of the database (ADR-031):
+```json
+{ "now":"2026-11-16T14:32:51Z",
+  "items":[{ "pid":64, "user":"app", "application":"athens:a@b.c", "client":"10.0.0.5",
+             "state":"active", "wait":"Lock: transactionid",
+             "queryStart":"...", "xactStart":"...",
+             "query":"select ...",          // the editor statement for athens queries
+             "queryId":"01J..." }] }         // only on the caller's own editor queries
+```
+
 Edits of an `edit` result use the grid write endpoints of that table (rows
 PATCH/POST/DELETE above): `edit` is a hint, those endpoints check access,
 editability, confirmation and conflicts as for the grid.

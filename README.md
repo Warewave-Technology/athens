@@ -334,7 +334,7 @@ configuration only names the admin groups and an emergency
 |---|---|
 | `login`, `login_denied`, `logout` | sign-in and sign-out |
 | `query_execute`, `query_cancel` | every SQL editor run (reads included) and cancellation |
-| `rows_read`, `cell_read`, `structure_view` | grid pages, full cell values, table structure (`audit.logReads`) |
+| `rows_read`, `cell_read`, `structure_view`, `activity_view` | grid pages, full cell values, table structure, running queries panel (`audit.logReads`) |
 | `row_insert`, `row_update`, `row_delete` | grid changes, with primary keys and column names |
 | `access_denied`, `confirm_required` | refused or not yet confirmed statements |
 | `saved_query_create/update/delete`, `history_delete` | changes to a user's saved items |

@@ -31,6 +31,8 @@ const (
 	EventStructureView = "structure_view"
 	EventAdminView     = "admin_view"
 	EventAuditExport   = "audit_export"
+	// EventActivityView: the running queries of a database (ADR-031).
+	EventActivityView = "activity_view"
 
 	// Changes to the user's own stored items. Drafts and UI state are
 	// autosaved on every edit and are not audited.
