@@ -18,7 +18,9 @@ export interface SqlEditorProps {
 
 const theme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--surface)", color: "var(--text)" },
-  ".cm-content": { caretColor: "var(--accent)" },
+  ".cm-content": { caretColor: "var(--text)" },
+  // drawSelection paints its own cursor (black unless the theme is marked dark)
+  ".cm-cursor, .cm-dropCursor": { borderLeft: "2px solid var(--text)" },
   ".cm-gutters": {
     backgroundColor: "var(--surface)",
     color: "var(--text-3)",
