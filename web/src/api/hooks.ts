@@ -45,8 +45,15 @@ export function useRelations(targetId: string | null, db: string | null) {
   });
 }
 
-export function useStructure(targetId: string, db: string, schema: string, rel: string) {
+export function useStructure(
+  targetId: string,
+  db: string,
+  schema: string,
+  rel: string,
+  enabled = true,
+) {
   return useQuery({
+    enabled,
     queryKey: ["structure", targetId, db, schema, rel],
     queryFn: () =>
       api<Structure>(

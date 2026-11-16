@@ -147,6 +147,17 @@ func Lookup(ctx context.Context, tx pgx.Tx, schema, name string) (uint32, Kind, 
 	return oid, kindOf(kind), err
 }
 
+// LookupOID resolves a relation oid to its schema, name and kind.
+func LookupOID(ctx context.Context, tx pgx.Tx, oid uint32) (string, string, Kind, error) {
+	var schema, name, kind string
+	err := tx.QueryRow(ctx, `SELECT n.nspname, c.relname, c.relkind::text FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = $1`, oid).Scan(&schema, &name, &kind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", "", ErrNotFound
+	}
+	return schema, name, kindOf(kind), err
+}
+
 // CompletionColumns maps "schema.relation" to its column names (editor
 // autocompletion), non-system schemas only, capped at limit columns.
 func CompletionColumns(ctx context.Context, tx pgx.Tx, limit int) (map[string][]string, error) {

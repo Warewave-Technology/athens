@@ -1,12 +1,15 @@
-import { Download, Play, Square } from "lucide-react";
+import { Download, Lock, Pencil, Play, Square } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, enc, tpath } from "../../api/client";
-import { dbPath, useTargets } from "../../api/hooks";
+import { dbPath, useStructure, useTargets } from "../../api/hooks";
 import { DataGrid } from "../grid/DataGrid";
 import type { Cell } from "../grid/gridUtil";
 import { RowPanel } from "../grid/RowPanel";
+import { WriteActions, WriteBanners, WriteConfirm, WritePanel } from "../grid/RowWrites";
+import { useColumnRules, useRowWrites } from "../grid/useRowWrites";
+import { relPath } from "../table/tableUtil";
 import { ConfirmDialog, type ConfirmDetails } from "./ConfirmDialog";
 import { downloadCSV } from "./csv";
 import { FavoritesDrawer, HistoryDrawer } from "./Drawers";
@@ -26,6 +29,14 @@ interface QueryOutput {
   commandTag: string;
   notices: { severity: string; message: string }[];
   durationMs: number;
+  /** the table a writer can edit these rows in (ADR-030) */
+  edit?: {
+    schema: string;
+    table: string;
+    /** table column of each result column; null: not one */
+    columns: (string | null)[];
+    primaryKey: string[];
+  };
 }
 
 type Outcome =
@@ -75,7 +86,6 @@ export function SqlTab({
   const [confirm, setConfirm] = useState<{ details: ConfirmDetails; sql: string } | null>(null);
   const [drawer, setDrawer] = useState<"history" | "saved" | null>(null);
   const [limit, setLimit] = useState(1000);
-  const [selected, setSelected] = useState<number | null>(null);
   const [editorH, setEditorH] = useState(220);
   const qc = useQueryClient();
   const schema = useCompletionSchema(targetId, db);
@@ -120,13 +130,75 @@ export function SqlTab({
     return () => clearInterval(i);
   }, [running]);
 
+  const out = outcome?.kind === "ok" ? outcome.out : null;
+  const truncated = useMemo(() => new Set(out?.truncatedCells.map(([r, c]) => r + ":" + c)), [out]);
+  const edit = target?.level === "write" ? out?.edit : undefined;
+  const structure = useStructure(targetId, db, edit?.schema ?? "", edit?.table ?? "", !!edit);
+  const rules = useColumnRules(structure.data?.columns);
+  // replaces the shown result rows after a write, keeping truncated cells in place
+  const setRows = (fn: (rows: Cell[][]) => { rows: Cell[][]; index: (r: number) => number }) =>
+    setOutcome((o) => {
+      if (o?.kind !== "ok") return o;
+      const { rows, index } = fn(o.out.rows);
+      const truncatedCells = o.out.truncatedCells
+        .map(([r, c]) => [index(r), c] as [number, number])
+        .filter(([r]) => r >= 0);
+      return { ...o, out: { ...o.out, rows, truncatedCells } };
+    });
+  // a server row is in table column order; result columns pick from it
+  const fromServer = (server: Cell[], old: Cell[] | null) => {
+    const order = new Map(structure.data?.columns.map((c, i) => [c.name, i]));
+    return out!.columns.map((_, c) => {
+      const i = order.get(edit!.columns[c] ?? "");
+      return i !== undefined ? server[i] : old ? old[c] : null;
+    });
+  };
+  const tableChanged = () =>
+    qc.invalidateQueries({ queryKey: ["rows", targetId, db, edit!.schema, edit!.table] });
+  const w = useRowWrites({
+    base: edit ? relPath(targetId, db, edit.schema, edit.table) : "",
+    label: edit ? `${edit.schema}.${edit.table}` : "",
+    environment: target?.environment ?? "",
+    editable: !!edit && !!structure.data,
+    columns: out?.columns ?? [],
+    rows: out?.rows ?? [],
+    tableColumn: (c) => edit?.columns[c] ?? null,
+    pk: (row) =>
+      Object.fromEntries(edit!.primaryKey.map((k) => [k, row[edit!.columns.indexOf(k)]])),
+    readOnly: rules.readOnly,
+    truncated,
+    onUpdated: (saved) => {
+      setRows((rows) => ({
+        rows: rows.map((row, i) => (saved.has(i) ? fromServer(saved.get(i)!, row) : row)),
+        index: (r) => (saved.has(r) ? -1 : r),
+      }));
+      void tableChanged();
+    },
+    onInserted: (row) => {
+      setRows((rows) => ({ rows: [...rows, fromServer(row, null)], index: (r) => r }));
+      void tableChanged();
+    },
+    onDeleted: (deleted) => {
+      const gone = new Set(deleted);
+      setRows((rows) => ({
+        rows: rows.filter((_, i) => !gone.has(i)),
+        index: (r) => (gone.has(r) ? -1 : r - deleted.filter((d) => d < r).length),
+      }));
+      void tableChanged();
+    },
+  });
+
+  const viewRow = w.panel?.kind === "view" ? w.panel.row : null;
+
   const execute = async (sql: string, confirmed = false) => {
     if (!sql.trim() || running) return;
+    if (w.dirtyRows && !window.confirm("Discard unsaved changes?")) return;
     const id = crypto.randomUUID();
     const ctl = new AbortController();
     setRunning({ id, started: Date.now(), ctl });
     setElapsed(0);
-    setSelected(null);
+    w.resetEdits();
+    w.setPanel(null);
     try {
       const out = await api<QueryOutput>(dbPath(targetId, db) + "/query", {
         method: "POST",
@@ -174,9 +246,6 @@ export function SqlTab({
     if (v) v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: sql } });
     v?.focus();
   };
-
-  const out = outcome?.kind === "ok" ? outcome.out : null;
-  const truncated = useMemo(() => new Set(out?.truncatedCells.map(([r, c]) => r + ":" + c)), [out]);
 
   const startResize = (e: React.PointerEvent) => {
     const startY = e.clientY;
@@ -280,6 +349,21 @@ export function SqlTab({
               Messages{out?.notices.length ? ` (${out.notices.length})` : ""}
             </button>
             <span className="spacer" />
+            {w.editable && (
+              <span className="badge" title="Edits are saved to this table by primary key">
+                <Icon as={Pencil} size={12} />
+                {edit!.schema}.{edit!.table}
+              </span>
+            )}
+            {!w.editable && target?.level === "write" && out && out.columns.length > 0 && (
+              <span
+                className="badge"
+                title="Results can be edited when the query reads one table (no join, grouping or DISTINCT) and returns its primary key"
+              >
+                <Icon as={Lock} size={12} />
+                Read only
+              </span>
+            )}
             {out && (
               <span className="muted">
                 {out.commandTag} · {out.durationMs} ms
@@ -307,27 +391,43 @@ export function SqlTab({
                 CSV
               </button>
             )}
+            {w.editable && pane === "results" && <WriteActions w={w} />}
           </div>
           <div className="subtab-body sql-result-body">
             {pane === "results" &&
               (out && out.columns.length > 0 ? (
-                <div className={"grid-area" + (selected != null ? " with-panel" : "")}>
-                  <DataGrid
-                    columns={out.columns}
-                    rows={out.rows}
-                    truncated={truncated}
-                    selectedRow={selected}
-                    onSelectRow={setSelected}
+                <div className="result-stack">
+                  <WriteBanners
+                    w={w}
+                    onReload={() => {
+                      if (outcome?.kind !== "ok") return;
+                      w.resetEdits();
+                      void execute(outcome.sql);
+                    }}
                   />
-                  {selected != null && out.rows[selected] && (
-                    <RowPanel
+                  <div className={"grid-area" + (w.panel ? " with-panel" : "")}>
+                    <DataGrid
                       columns={out.columns}
-                      row={out.rows[selected]}
-                      title={`Row ${selected + 1}`}
-                      truncated={(c) => truncated.has(selected + ":" + c)}
-                      onClose={() => setSelected(null)}
+                      rows={out.rows}
+                      truncated={truncated}
+                      {...w.gridProps}
                     />
-                  )}
+                    {viewRow != null && out.rows[viewRow] && (
+                      <RowPanel
+                        columns={out.columns}
+                        row={out.rows[viewRow]}
+                        title={`Row ${viewRow + 1}`}
+                        truncated={(c) => truncated.has(viewRow + ":" + c)}
+                        onClose={() => w.setPanel(null)}
+                      />
+                    )}
+                    <WritePanel
+                      w={w}
+                      title={(r) => (r === null ? "New row" : `Row ${r + 1}`)}
+                      defaults={rules.defaults}
+                      notNull={rules.notNull}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="pad muted">
@@ -360,6 +460,7 @@ export function SqlTab({
           onClose={() => setDrawer(null)}
         />
       )}
+      <WriteConfirm w={w} target={target?.displayName ?? targetId} db={db} />
       {confirm && (
         <ConfirmDialog
           details={confirm.details}

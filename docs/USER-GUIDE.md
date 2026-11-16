@@ -158,9 +158,16 @@ editor is bound to the server and database of its tab.
   reports.
 - **Messages** shows the command result (`UPDATE 3`) and any notices.
 - **CSV** downloads the result.
+- **Editing results:** with write access, the rows of a query that reads one
+  table and returns its primary key (`select id, name from orders where …`)
+  can be edited like the table grid: double-click a cell, **Insert row**, or
+  select rows to delete. The results bar names the table. Joins, `GROUP BY`,
+  `DISTINCT`, `UNION`, CTEs, views and computed columns stay read-only; the
+  bar then shows **Read only**.
 - **History:** every query you run, with its result, newest first. Click
   one to load it into the editor.
 - **Saved:** keep queries by name with **Save current**; they are yours only.
+  Click one to load it, or ▶ to load and run it on the current database.
 - **Drafts:** the editor text is saved automatically per server and database
   and comes back when you open the editor again.
 

@@ -1185,6 +1185,14 @@ table.simple td.wrap {
   gap: 4px;
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* a narrow results bar scrolls instead of squeezing its buttons */
+.subtabs > * {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .subtabs button.active {
@@ -1201,6 +1209,17 @@ table.simple td.wrap {
 
 .pad {
   padding: 14px 16px;
+}
+
+.result-stack {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.result-stack > .grid-area {
+  flex: 1;
+  min-height: 0;
 }
 
 .messages > div {

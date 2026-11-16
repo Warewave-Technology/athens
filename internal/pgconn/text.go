@@ -14,6 +14,10 @@ type Column struct {
 	Name    string `json:"name"`
 	TypeOID uint32 `json:"typeOid"`
 	Type    string `json:"type"`
+	// TableOID and TableColumn (attnum) name the table column this result
+	// column is a plain reference to; 0 for expressions.
+	TableOID    uint32 `json:"-"`
+	TableColumn uint16 `json:"-"`
 }
 
 // TextResult holds rows fetched in Postgres TEXT format (ADR-004). A nil
@@ -67,7 +71,8 @@ func execText(ctx context.Context, tx pgx.Tx, sql string, params []*string, o Te
 	res := &TextResult{}
 	// Field descriptions are only valid until Close; copy them first.
 	for _, fd := range rr.FieldDescriptions() {
-		res.Columns = append(res.Columns, Column{Name: fd.Name, TypeOID: fd.DataTypeOID})
+		res.Columns = append(res.Columns, Column{Name: fd.Name, TypeOID: fd.DataTypeOID,
+			TableOID: fd.TableOID, TableColumn: fd.TableAttributeNumber})
 		res.typmods = append(res.typmods, fd.TypeModifier)
 	}
 	for rr.NextRow() {

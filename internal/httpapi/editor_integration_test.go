@@ -79,6 +79,52 @@ func TestEditorBasics(t *testing.T) {
 	})
 }
 
+// TestEditableResults: a writer's single-table SELECT that includes the whole
+// primary key names its table and source columns (ADR-030).
+func TestEditableResults(t *testing.T) {
+	in := instances[0]
+	h, _ := dbHarness(t, in, nil)
+	w := h.login("w@example.com", "writers")
+	edit := func(c *client, sql string) *query.EditSource {
+		t.Helper()
+		var out query.Output
+		r := run(c, sql, nil)
+		r.json(t, &out)
+		if r.status != 200 {
+			t.Fatalf("%q: %d %s", sql, r.status, r.body)
+		}
+		return out.Edit
+	}
+	e := edit(w, "select amount * 2 as x, status as s, id from shop.orders where id < 3")
+	if e == nil || e.Schema != "shop" || e.Table != "orders" || fmt.Sprint(e.PrimaryKey) != "[id]" ||
+		e.Columns[0] != nil || *e.Columns[1] != "status" || *e.Columns[2] != "id" {
+		t.Fatalf("orders: %+v", e)
+	}
+	if e := edit(w, "select * from shop.events"); e == nil || fmt.Sprint(e.PrimaryKey) != "[id at]" {
+		t.Fatalf("partitioned: %+v", e)
+	}
+	if e := edit(w, `select * from public."Weird ""Name"""`); e == nil || e.Table != `Weird "Name"` || *e.Columns[1] != "select" {
+		t.Fatalf("quoted: %+v", e)
+	}
+	for _, sql := range []string{
+		"select status from shop.orders",                   // no primary key in the result
+		"select id, id from shop.orders",                   // repeated key column
+		"select * from shop.paid_orders",                   // view
+		"select * from shop.nopk",                          // no primary key
+		"select o.id from shop.orders o, shop.customers c", // two tables
+		"select distinct id from shop.orders",
+		"with x as (select * from shop.orders) select * from x",
+		"select 1",
+	} {
+		if e := edit(w, sql); e != nil {
+			t.Errorf("%q: editable %+v", sql, e)
+		}
+	}
+	if e := edit(h.login("r@example.com", "readers"), "select * from shop.orders limit 1"); e != nil {
+		t.Errorf("read user: editable %+v", e)
+	}
+}
+
 func TestEditorConfirmAndAudit(t *testing.T) {
 	in := instances[0]
 	h, _ := dbHarness(t, in, nil)

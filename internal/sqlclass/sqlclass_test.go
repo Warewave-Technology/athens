@@ -162,3 +162,30 @@ func TestMergeAndOrTrueAreDestructive(t *testing.T) {
 		t.Error("a normal OR is not destructive")
 	}
 }
+
+func TestSingleTable(t *testing.T) {
+	for sql, want := range map[string]bool{
+		"select * from shop.orders where id < 10 order by id limit 5": true,
+		"select id, status as s, amount * 2 from orders":              true,
+		"select id, (select 1) from only orders":                      true,
+		"select o.id from orders o join customers c on c.id = o.id":   false,
+		"select o.id from orders o, customers c":                      false,
+		"select distinct id from orders":                              false,
+		"select status, count(*) from orders group by status":         false,
+		"select id from orders union select id from orders":           false,
+		"with x as (select * from orders) select * from x":            false,
+		"select * from (select * from orders) s":                      false,
+		"select * from generate_series(1, 3)":                         false,
+		"select 1":                                                    false,
+		"explain analyze select * from orders":                        false,
+		"values (1)":                                                  false,
+	} {
+		r, err := Classify(sql)
+		if err != nil {
+			t.Fatalf("%q: %v", sql, err)
+		}
+		if r.SingleTable != want {
+			t.Errorf("%q: single table = %v, want %v", sql, r.SingleTable, want)
+		}
+	}
+}

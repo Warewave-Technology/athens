@@ -1,26 +1,22 @@
 import { useMemo, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, enc } from "../../api/client";
+import { api, enc } from "../../api/client";
 import { useRelations, useStructure, useTargets } from "../../api/hooks";
 import { formatCount } from "../../format";
 import { DataGrid, type SortSpec } from "../grid/DataGrid";
 import { FilterBuilder, type Filter } from "../grid/FilterBuilder";
-import { renderValue, type Cell } from "../grid/gridUtil";
 import { RowPanel } from "../grid/RowPanel";
-import { ConfirmDialog, type ConfirmDetails } from "../sql/ConfirmDialog";
-import { RowEditor } from "./RowEditor";
+import { WriteActions, WriteBanners, WriteConfirm, WritePanel } from "../grid/RowWrites";
+import { useColumnRules, useRowWrites } from "../grid/useRowWrites";
 import {
   ArrowUpDown,
-  Check,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   ListFilter,
   Lock,
-  Plus,
   RefreshCw,
-  Trash2,
   X,
 } from "lucide-react";
 import { Icon } from "../../components/Icon";
@@ -32,10 +28,6 @@ const readOnlyReason = {
 } as const;
 import { b64url, pkOf, relPath, type GridPage } from "./tableUtil";
 
-type Panel =
-  { kind: "view"; row: number } | { kind: "edit"; row: number } | { kind: "insert" } | null;
-type Edits = Record<number, Record<number, Cell>>;
-
 export function TableData(props: { targetId: string; db: string; schema: string; name: string }) {
   const { targetId, db, schema, name } = props;
   const [limit, setLimit] = useState(100);
@@ -44,14 +36,6 @@ export function TableData(props: { targetId: string; db: string; schema: string;
   const [filters, setFilters] = useState<Filter[]>([]);
   const [exactCount, setExactCount] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [panel, setPanel] = useState<Panel>(null);
-  const [edits, setEdits] = useState<Edits>({});
-  const [editing, setEditing] = useState<{ r: number; c: number; text: string } | null>(null);
-  const [selection, setSelection] = useState<Set<number>>(new Set());
-  const [conflicts, setConflicts] = useState<Set<number>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [writeError, setWriteError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{ details: ConfirmDetails; run: () => void } | null>(null);
   const base = relPath(targetId, db, schema, name);
   const qc = useQueryClient();
 
@@ -60,7 +44,6 @@ export function TableData(props: { targetId: string; db: string; schema: string;
   const editable = !!rel?.editable;
   const structure = useStructure(targetId, db, schema, name);
   const target = useTargets().data?.find((t) => t.id === targetId);
-  const production = target?.environment === "production";
 
   const rowsKey = ["rows", targetId, db, schema, name, limit, offset, sort, filters, exactCount];
   const q = useQuery({
@@ -78,39 +61,34 @@ export function TableData(props: { targetId: string; db: string; schema: string;
     () => new Set(page?.truncatedCells.map(([r, c]) => r + ":" + c)),
     [page],
   );
-  const readOnlyCols = useMemo(
-    () =>
-      new Set(
-        (structure.data?.columns ?? [])
-          .filter((c) => c.generated || c.identity === "always")
-          .map((c) => c.name),
-      ),
-    [structure.data],
-  );
-  const defaults = useMemo(
-    () =>
-      new Set(
-        (structure.data?.columns ?? [])
-          .filter((c) => c.default != null || c.identity)
-          .map((c) => c.name),
-      ),
-    [structure.data],
-  );
-  const notNull = useMemo(
-    () => new Set((structure.data?.columns ?? []).filter((c) => c.notNull).map((c) => c.name)),
-    [structure.data],
-  );
-  const dirtyRows = Object.keys(edits).length;
+  const { readOnly, defaults, notNull } = useColumnRules(structure.data?.columns);
 
-  const resetEdits = () => {
-    setEdits({});
-    setEditing(null);
-    setConflicts(new Set());
-    setSelection(new Set());
-  };
+  const w = useRowWrites({
+    base,
+    label: `${schema}.${name}`,
+    environment: target?.environment ?? "",
+    editable,
+    columns: page?.columns ?? [],
+    rows: page?.rows ?? [],
+    tableColumn: (c) => page!.columns[c].name,
+    pk: (row) => pkOf(page!, row),
+    readOnly,
+    truncated,
+    // the grid shows table columns in table order: server rows replace them
+    onUpdated: async (saved, allSaved) => {
+      qc.setQueryData<GridPage>(rowsKey, (old) =>
+        old ? { ...old, rows: old.rows.map((row, i) => saved.get(i) ?? row) } : old,
+      );
+      if (allSaved) await q.refetch();
+    },
+    onInserted: () => q.refetch(),
+    onDeleted: () => q.refetch(),
+  });
+  const { panel, setPanel } = w;
+
   const changeView = (fn: () => void) => {
-    if (dirtyRows && !window.confirm("Discard unsaved changes?")) return;
-    resetEdits();
+    if (w.dirtyRows && !window.confirm("Discard unsaved changes?")) return;
+    w.resetEdits();
     setPanel(null);
     fn();
   };
@@ -136,165 +114,6 @@ export function TableData(props: { targetId: string; db: string; schema: string;
     );
     return r.value;
   };
-
-  // Runs a write; on 409 confirmation_required asks first, then retries with confirm.
-  const withConfirm = async (
-    summary: string,
-    destructive: boolean,
-    fn: (confirm: boolean) => Promise<void>,
-  ) => {
-    if (!production) return fn(false);
-    setConfirm({
-      details: {
-        class: "dml",
-        destructive,
-        summary,
-        environment: "production",
-        requireTypedConfirmation: true,
-      },
-      run: () => void fn(true),
-    });
-  };
-
-  const saveEdits = () =>
-    withConfirm(`UPDATE ${dirtyRows} row(s) of ${schema}.${name}`, false, async (confirm) => {
-      if (!page) return;
-      setBusy(true);
-      setWriteError(null);
-      const failed = new Set<number>();
-      const remaining: Edits = {};
-      const saved = new Map<number, Cell[]>();
-      for (const [rs, cols] of Object.entries(edits)) {
-        const r = Number(rs);
-        const row = page.rows[r];
-        const set: Record<string, Cell> = {};
-        const original: Record<string, Cell> = {};
-        for (const [cs, v] of Object.entries(cols)) {
-          const c = Number(cs);
-          set[page.columns[c].name] = v;
-          original[page.columns[c].name] = row[c];
-        }
-        try {
-          const res = await api<{ row: Cell[] }>(base + "/rows", {
-            method: "PATCH",
-            body: { pk: pkOf(page, row), set, original, confirm },
-          });
-          saved.set(r, res.row);
-        } catch (e) {
-          remaining[r] = cols;
-          if (e instanceof ApiError && e.code === "row_conflict") failed.add(r);
-          else setWriteError((e as Error).message);
-        }
-      }
-      // show the saved rows as the server returned them; conflicting rows keep
-      // their stale values until the user reloads them
-      qc.setQueryData<GridPage>(rowsKey, (old) =>
-        old ? { ...old, rows: old.rows.map((row, i) => saved.get(i) ?? row) } : old,
-      );
-      setBusy(false);
-      setEdits(remaining);
-      setConflicts(failed);
-      if (Object.keys(remaining).length === 0) await q.refetch();
-    });
-
-  const reloadConflicts = async () => {
-    setEdits((e) =>
-      Object.fromEntries(Object.entries(e).filter(([r]) => !conflicts.has(Number(r)))),
-    );
-    setConflicts(new Set());
-    await q.refetch();
-  };
-
-  const savePanel = (values: Record<string, Cell>) => {
-    if (!page || !panel || panel.kind === "view") return;
-    const isInsert = panel.kind === "insert";
-    const row = isInsert ? null : page.rows[panel.row];
-    if (!isInsert && Object.keys(values).length === 0) return setPanel(null);
-    void withConfirm(
-      `${isInsert ? "INSERT into" : "UPDATE 1 row of"} ${schema}.${name}`,
-      false,
-      async (confirm) => {
-        setBusy(true);
-        setWriteError(null);
-        try {
-          if (isInsert) {
-            await api(base + "/rows", { method: "POST", body: { values, confirm } });
-          } else {
-            const original = Object.fromEntries(
-              Object.keys(values).map((k) => [
-                k,
-                row![page.columns.findIndex((c) => c.name === k)],
-              ]),
-            );
-            await api(base + "/rows", {
-              method: "PATCH",
-              body: { pk: pkOf(page, row!), set: values, original, confirm },
-            });
-          }
-          setPanel(null);
-          await q.refetch();
-        } catch (e) {
-          setWriteError(
-            e instanceof ApiError && e.code === "row_conflict"
-              ? e.message + " (close and reload the page)"
-              : (e as Error).message,
-          );
-        } finally {
-          setBusy(false);
-        }
-      },
-    );
-  };
-
-  const deleteSelected = () => {
-    if (!page || selection.size === 0) return;
-    const rowsToDelete = [...selection];
-    const run = async (confirmFlag: boolean) => {
-      setBusy(true);
-      setWriteError(null);
-      try {
-        await api(base + "/rows", {
-          method: "DELETE",
-          body: { pks: rowsToDelete.map((r) => pkOf(page, page.rows[r])), confirm: confirmFlag },
-        });
-        resetEdits();
-        setPanel(null);
-        await q.refetch();
-      } catch (e) {
-        setWriteError((e as Error).message);
-      } finally {
-        setBusy(false);
-      }
-    };
-    setConfirm({
-      details: {
-        class: "dml",
-        destructive: true,
-        summary: `DELETE ${rowsToDelete.length} row(s) from ${schema}.${name}`,
-        environment: target?.environment ?? "",
-        requireTypedConfirmation: production,
-      },
-      run: () => void run(production),
-    });
-  };
-
-  const commitInline = () => {
-    if (!editing || !page) return;
-    const { r, c, text } = editing;
-    setEdits((e) => {
-      const orig = page.rows[r][c];
-      const rowEdits = { ...(e[r] ?? {}) };
-      if (text === (orig ?? "") && orig !== null) delete rowEdits[c];
-      else rowEdits[c] = text;
-      const next = { ...e, [r]: rowEdits };
-      if (Object.keys(rowEdits).length === 0) delete next[r];
-      return next;
-    });
-    setEditing(null);
-  };
-
-  const canEditCell = (r: number, c: number) =>
-    editable && !!page && !readOnlyCols.has(page.columns[c].name) && !truncated.has(r + ":" + c);
 
   return (
     <div className="table-data">
@@ -329,33 +148,7 @@ export function TableData(props: { targetId: string; db: string; schema: string;
           </span>
         )}
         <span className="spacer" />
-        {editable && selection.size > 0 && (
-          <button className="danger" onClick={deleteSelected} disabled={busy}>
-            <Icon as={Trash2} size={14} />
-            Delete {selection.size}
-          </button>
-        )}
-        {editable && dirtyRows > 0 && (
-          <>
-            <button onClick={resetEdits} disabled={busy}>
-              Discard
-            </button>
-            <button className="primary" onClick={() => void saveEdits()} disabled={busy}>
-              <Icon as={Check} size={14} />
-              Save {dirtyRows} {dirtyRows > 1 ? "rows" : "row"}
-            </button>
-          </>
-        )}
-        {editable && (
-          <button
-            className={dirtyRows || selection.size ? "" : "primary"}
-            onClick={() => setPanel({ kind: "insert" })}
-            disabled={busy}
-          >
-            <Icon as={Plus} size={14} />
-            Insert row
-          </button>
-        )}
+        {editable && <WriteActions w={w} />}
       </div>
       {showFilters && page && (
         <FilterBuilder
@@ -371,14 +164,13 @@ export function TableData(props: { targetId: string; db: string; schema: string;
         />
       )}
       {q.isError && <div className="error-banner">{q.error.message}</div>}
-      {conflicts.size > 0 && (
-        <div className="error-banner">
-          {conflicts.size === 1 ? "A row was" : `${conflicts.size} rows were`} changed by someone
-          else after you loaded them, so those edits weren’t saved.{" "}
-          <button onClick={() => void reloadConflicts()}>Reload rows</button>
-        </div>
-      )}
-      {writeError && !panel && <div className="error-banner">{writeError}</div>}
+      <WriteBanners
+        w={w}
+        onReload={() => {
+          w.dropConflicts();
+          void q.refetch();
+        }}
+      />
       <div className={"grid-area" + (panel ? " with-panel" : "")}>
         {page ? (
           <DataGrid
@@ -393,56 +185,7 @@ export function TableData(props: { targetId: string; db: string; schema: string;
                 setOffset(0);
               })
             }
-            selectedRow={panel && panel.kind !== "insert" ? panel.row : null}
-            onSelectRow={(r) =>
-              setPanel(r == null ? null : { kind: editable ? "edit" : "view", row: r })
-            }
-            selectable={editable}
-            selected={selection}
-            onToggleSelect={(r) =>
-              setSelection((s) => {
-                const n = new Set(s);
-                if (n.has(r)) n.delete(r);
-                else n.add(r);
-                return n;
-              })
-            }
-            onToggleAll={() =>
-              setSelection((s) =>
-                s.size === page.rows.length ? new Set() : new Set(page.rows.map((_, i) => i)),
-              )
-            }
-            onRowNumberClick={(r) => setPanel({ kind: editable ? "edit" : "view", row: r })}
-            rowClassName={(r) =>
-              (selection.has(r) ? "marked" : "") + (conflicts.has(r) ? " conflict" : "")
-            }
-            cellClassName={(r, c) => (edits[r] && c in edits[r] ? "dirty" : "")}
-            onCellDoubleClick={(r, c) => {
-              if (canEditCell(r, c)) {
-                const v = edits[r]?.[c] !== undefined ? edits[r][c] : page.rows[r][c];
-                setEditing({ r, c, text: v ?? "" });
-              } else setPanel({ kind: editable ? "edit" : "view", row: r });
-            }}
-            renderCell={(r, c) => {
-              if (editing && editing.r === r && editing.c === c)
-                return (
-                  <input
-                    autoFocus
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="cell-input mono"
-                    value={editing.text}
-                    onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-                    onBlur={commitInline}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === "Enter") commitInline();
-                      if (e.key === "Escape") setEditing(null);
-                    }}
-                  />
-                );
-              if (edits[r] && c in edits[r]) return renderValue(edits[r][c], false);
-              return undefined;
-            }}
+            {...w.gridProps}
           />
         ) : (
           <div className="grid-loading">{q.isPending ? "Loading rows…" : ""}</div>
@@ -457,31 +200,12 @@ export function TableData(props: { targetId: string; db: string; schema: string;
             onClose={() => setPanel(null)}
           />
         )}
-        {page && (panel?.kind === "edit" || panel?.kind === "insert") && (
-          <RowEditor
-            key={panel.kind === "edit" ? "edit-" + panel.row : "insert"}
-            title={panel.kind === "insert" ? "New row" : `Row ${offset + panel.row + 1}`}
-            columns={page.columns}
-            row={panel.kind === "edit" ? page.rows[panel.row] : null}
-            readOnlyCols={
-              panel.kind === "edit"
-                ? new Set([
-                    ...readOnlyCols,
-                    ...page.columns
-                      .filter((_, c) => truncated.has(panel.row + ":" + c))
-                      .map((c) => c.name),
-                  ])
-                : readOnlyCols
-            }
+        {page && (
+          <WritePanel
+            w={w}
+            title={(r) => (r === null ? "New row" : `Row ${offset + r + 1}`)}
             defaults={defaults}
             notNull={notNull}
-            busy={busy}
-            error={writeError}
-            onSave={savePanel}
-            onClose={() => {
-              setPanel(null);
-              setWriteError(null);
-            }}
           />
         )}
       </div>
@@ -561,19 +285,7 @@ export function TableData(props: { targetId: string; db: string; schema: string;
           <Icon as={ChevronsRight} size={15} />
         </button>
       </footer>
-      {confirm && (
-        <ConfirmDialog
-          details={confirm.details}
-          target={target?.displayName ?? targetId}
-          db={db}
-          onCancel={() => setConfirm(null)}
-          onConfirm={() => {
-            const run = confirm.run;
-            setConfirm(null);
-            run();
-          }}
-        />
-      )}
+      <WriteConfirm w={w} target={target?.displayName ?? targetId} db={db} />
     </div>
   );
 }

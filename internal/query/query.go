@@ -65,6 +65,7 @@ type Output struct {
 	CommandTag     string          `json:"commandTag"`
 	Notices        []pgconn.Notice `json:"notices"`
 	DurationMs     int64           `json:"durationMs"`
+	Edit           *EditSource     `json:"edit,omitempty"`
 }
 
 var clientID = regexp.MustCompile(`^[A-Za-z0-9-]{8,64}$`)
@@ -188,6 +189,11 @@ func (s *Service) Execute(ctx context.Context, in Input) (*Output, error) {
 			return err
 		}
 		out.Columns, out.Rows, out.Truncated, out.TruncatedCells, out.CommandTag = res.Columns, res.Rows, res.Truncated, res.TruncatedCells, res.CommandTag
+		if in.Level == authz.Write && cls.SingleTable {
+			if out.Edit, err = editSource(ctx, tx, res.Columns); err != nil {
+				return err
+			}
+		}
 		// Heuristics miss tautologies (WHERE id = id): an unconfirmed change
 		// of many rows is rolled back and becomes a confirmation (ADR-027).
 		if countChanges {

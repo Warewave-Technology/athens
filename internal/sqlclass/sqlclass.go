@@ -34,6 +34,10 @@ type Result struct {
 	// Cursorable is true for plain row-returning reads that may be wrapped in
 	// DECLARE CURSOR (SELECT/VALUES/TABLE without INTO or locking).
 	Cursorable bool `json:"-"`
+	// SingleTable is true for a SELECT that reads one table reference with
+	// no join, grouping, DISTINCT, set operation or CTE: each result row is
+	// one row of that table, so the result can be edited by key (ADR-030).
+	SingleTable bool `json:"-"`
 	// Reason explains Session/NonTx rejections and side-effect promotions.
 	Reason string `json:"reason,omitempty"`
 }
@@ -125,13 +129,14 @@ func classify(n *pg.Node, r *Result) {
 			r.Class, r.Reason = DML, "row locking (FOR UPDATE/SHARE)"
 		default:
 			r.Cursorable = true
+			r.SingleTable = singleTable(sel)
 		}
 	case *pg.Node_VariableShowStmt:
 		r.Class = Read
 	case *pg.Node_ExplainStmt:
 		if explainAnalyze(s.ExplainStmt) {
 			classify(s.ExplainStmt.Query, r)
-			r.Cursorable = false
+			r.Cursorable, r.SingleTable = false, false
 			r.Summary = "EXPLAIN ANALYZE " + r.Summary
 			return
 		}
@@ -297,6 +302,15 @@ func SensitiveRelation(schema, name string) bool {
 		schema = "pg_catalog"
 	}
 	return sensitiveRelations[schema+"."+name]
+}
+
+func singleTable(sel *pg.SelectStmt) bool {
+	if sel.Op != pg.SetOperation_SETOP_NONE || sel.WithClause != nil || len(sel.FromClause) != 1 ||
+		len(sel.GroupClause) > 0 || sel.HavingClause != nil || len(sel.DistinctClause) > 0 {
+		return false
+	}
+	_, ok := sel.FromClause[0].Node.(*pg.Node_RangeVar)
+	return ok
 }
 
 func promote(r *Result, reason string) {

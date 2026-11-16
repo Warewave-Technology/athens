@@ -450,3 +450,22 @@ connection lines and Kubernetes wheels). It supersedes the icon of ADR-019:
   swoosh (ADR-025); they are PNG, rendered from SVG with the icon embedded.
 - The old SVG icon, mark, mono marks and SVG lockups are removed. The
   trademark note of ADR-019 still applies: the logo shows Kubernetes wheels.
+
+## ADR-030 Editable SQL editor results
+Users asked to change a value or add a row from a query result instead of
+writing UPDATE/INSERT. A result is editable only when the rows map to table
+rows one to one, so an edit cannot reach a different row than the one shown:
+- The statement is a plain SELECT with exactly one table reference in FROM
+  and no join, GROUP BY, HAVING, DISTINCT, set operation or WITH (parser,
+  `sqlclass.SingleTable`).
+- Every result column that PostgreSQL reports as a plain table column
+  (RowDescription table OID / attnum) belongs to that one table, an ordinary
+  or partitioned table (not a view or a credentials catalog), and its whole
+  primary key is in the result. A table column shown twice is read-only.
+- Only for write access; the server adds `edit` to the response with the
+  table and the table column of each result column.
+- Writes go through the existing grid write endpoints, so authorization,
+  production confirmation, conflict detection (original values) and audit
+  are those of the grid (M7). The UI shares one implementation for both.
+Computed columns of an edited row keep their old value until the query runs
+again.

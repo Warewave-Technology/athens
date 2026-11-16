@@ -110,7 +110,10 @@ casts with `$n::<format_type>`.
   "columns":[{"name","typeOid","type"}], "rows":[[...]],
   "truncated":false, "truncatedCells":[], "rowsAffected":null,
   "commandTag":"SELECT 1", "notices":[{"severity","message"}],
-  "durationMs": 8 }
+  "durationMs": 8,
+  // only for write access and a SELECT of one table that returns its whole
+  // primary key (ADR-030); columns: table column per result column or null
+  "edit":{"schema":"public","table":"orders","columns":["id",null],"primaryKey":["id"]} }
 // 409
 { "error":{"code":"confirmation_required","message":"...",
   "details":{"class":"ddl","destructive":true,"summary":"DROP TABLE public.orders",
@@ -121,6 +124,10 @@ response arrives: client generates `clientQueryId` (UUID) in the request;
 server uses it as `queryId` if valid and unique for the user.
 
 `POST /queries/{queryId}/cancel` → 204
+
+Edits of an `edit` result use the grid write endpoints of that table (rows
+PATCH/POST/DELETE above): `edit` is a hint, those endpoints check access,
+editability, confirmation and conflicts as for the grid.
 
 ## History / favorites / drafts / ui state
 - `GET /history?targetId&database&limit=50&before=<id>` → `{ "items":[{"id","targetId","database","sql","class","result","durationMs","rows","error","createdAt"}] }`
