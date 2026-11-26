@@ -10,7 +10,7 @@ RUN npm install -g --no-fund --no-audit "$(node -p 'require("./package.json").pa
 COPY web/ ./
 RUN pnpm build
 
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS go
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS go
 WORKDIR /src
 ARG VERSION=dev COMMIT=none DATE=unknown TARGETOS TARGETARCH
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOOS=$TARGETOS GOARCH=$TARGETARCH
